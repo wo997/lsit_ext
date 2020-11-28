@@ -11,6 +11,11 @@ import * as fs from 'fs';
 let entity_data_files: any = {};
 let entity_definitions: any = {};
 
+interface file_data {
+    entity_name: any,
+    entity_definition: any,
+}
+
 export function activate(context: vscode.ExtensionContext) {
     const vscode = require("vscode");
 
@@ -19,13 +24,15 @@ export function activate(context: vscode.ExtensionContext) {
     const watcher: vscode.FileSystemWatcher = vscode.workspace.createFileSystemWatcher("**/*.json"); //glob search string
 
     const anyFilechange = (uri: vscode.Uri) => {
-        const file_data = updateFile(uri.path);
-        if (file_data) {
+        const file_path = filePathClean(uri.path);
+        const file_data = updateFile(file_path);
+
+        if (file_data.entity_name) {
+            entity_data_files[file_path] = file_data;
             updateDefiniton(file_data.entity_name);
         }
 
-        vscode.window.showInformationMessage("LSIT indexed changes in " + uri); //In my opinion this should be called
-
+        vscode.window.showInformationMessage("LSIT indexed changes in " + file_path);
     }
     watcher.onDidCreate(anyFilechange);
     watcher.onDidChange(anyFilechange);
@@ -104,49 +111,49 @@ function updateDefiniton(entity_name: string) {
     const entity_definition = {};
 
     Object.entries(entity_data_files).forEach(([file_path, file_data]: any) => {
-        if (file_data.entity_name !== entity_name) {
+        if (!file_data || file_data.entity_name !== entity_name) {
             return;
         }
-        Object.assign(entity_definition, file_data);
+        // TODO: it's a place where you want to merge props and methods maybe
+        Object.assign(entity_definition, file_data.entity_definition);
     });
 
     entity_definitions[entity_name] = entity_definition;
 }
 
-function updateFile(file_path: string, obj: any = null): { properties: any, entity_name: any } | null {
+function updateFile(file_path: string): file_data {
     const def_str = "_definition.json";
-
-    if (obj === null) {
-        obj = entity_data_files;
-    }
 
     const file_name = file_path.substr(file_path.lastIndexOf("/") + 1);
 
+    let entity_name: any = null;
+    let entity_definition: any = null;
+
     if (file_name.endsWith(def_str)) {
-        const entity_name = file_name.substring(0, file_name.length - def_str.length);
+        entity_name = file_name.substring(0, file_name.length - def_str.length);
 
         try {
-            if (file_path.charAt(0) == "/") {
-                file_path = file_path.substring(1);
-            }
+            file_path = filePathClean(file_path);
             const text_content = fs.readFileSync(file_path, "utf-8");
-            const definition = JSON.parse(text_content);
+            const file_parsed = JSON.parse(text_content);
 
-            const data = {
-                properties: definition.properties,
-                entity_name: entity_name
-            };
-
-            obj[entity_name] = data;
-
-            return data;
+            entity_definition = file_parsed;
         }
         catch (e) { }
     }
 
-    return null;
+    return {
+        entity_name,
+        entity_definition
+    };
 }
 
+function filePathClean(file_path: string): string {
+    if (file_path.charAt(0) == "/") {
+        return file_path.substring(1);
+    }
+    return file_path;
+}
 function IndexFiles() {
     /* "activationEvents": [
         "onCommand:lsit.helloWorld",
@@ -157,22 +164,23 @@ function IndexFiles() {
         return null;
     }
 
-    const project_root: fs.PathLike = vscode.workspace.workspaceFolders[0].uri.path.substring(1);
+    const project_root: fs.PathLike = filePathClean(vscode.workspace.workspaceFolders[0].uri.path);
 
     const scanFilesInDir: any = (dir: string) => {
         let entity_data_files_sub: any = {};
         fs.readdirSync(dir, { withFileTypes: true }).forEach(file => {
-            if (file.name.charAt(0) == "." || ["vendor", "builds", "prebuilds", "settings", "uploads"].includes(file.name)) {
-                return;
-            }
-
             const file_path = `${dir}/${file.name}`;
 
-            // TODO: append props
             if (file.isDirectory()) {
+                if (file.name.charAt(0) == "." || ["vendor", "builds", "prebuilds", "settings", "uploads"].includes(file.name)) {
+                    return;
+                }
                 Object.assign(entity_data_files_sub, scanFilesInDir(file_path));
             } else {
-                updateFile(file_path, entity_data_files_sub);
+                const data = updateFile(file_path);
+                if (data.entity_name) {
+                    entity_data_files_sub[file_path] = data;
+                }
             }
         });
 
