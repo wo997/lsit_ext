@@ -329,7 +329,7 @@ function decorateActiveEditor() {
                     new vscode.Position(line_id, start_ind + entity_match.length)
                 );
 
-                const reference_files = Object.entries(entity_data_files).filter(([file, data]): any => {
+                const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
                     return data.entity_name === entity_name;
                 }).map(e => {
                     return e[0];
