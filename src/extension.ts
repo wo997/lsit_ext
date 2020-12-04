@@ -24,7 +24,7 @@ const decorate_entity = vscode.window.createTextEditorDecorationType({
 });
 
 //const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
-const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*(?=(\["))/g;
+const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;
 
 let workspace_path = "";
 
@@ -129,14 +129,14 @@ function entityFound(entity_name: string) {
 };
 
 function updateDefiniton(entity_name: string) {
-    const entity_definition = {};
+    let entity_definition: any = {};
 
     Object.entries(entity_data_files).forEach(([file_path, file_data]: any) => {
         if (!file_data || file_data.entity_name !== entity_name) {
             return;
         }
         // TODO: it's a place where you want to merge props and methods maybe
-        Object.assign(entity_definition, file_data.entity_definition);
+        entity_definition = deepMerge(entity_definition, file_data.entity_definition);
     });
 
     entity_definitions[entity_name] = entity_definition;
@@ -244,15 +244,18 @@ function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
         //console.log(`Did change: ${event.document.uri}`);
 
-        if (window.activeTextEditor?.document == event.document) {
-            decorate(event.document);
-        }
+        decorateActiveEditor();
     });
 
+    vscode.window.onDidChangeActiveTextEditor(event => {
+
+        //console.log("heheh", event);
+        decorateActiveEditor();
+    })
     vscode.workspace.onDidOpenTextDocument(document => {
         //console.log(`Did open: ${document.uri}`);
 
-        decorate(document);
+        decorateActiveEditor();
     });
 }
 
@@ -266,13 +269,13 @@ function extractEntityName(str: string) {
 }
 
 
-function decorate(document: vscode.TextDocument) {
-
-    const editor = window.activeTextEditor;
-
-    if (!editor) {
+function decorateActiveEditor() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor?.document) {
         return;
     }
+
+    const document = editor.document;
 
     let sourceCode = document.getText();
 
@@ -303,7 +306,7 @@ function decorate(document: vscode.TextDocument) {
                 let link = `${base_url}${line.substring(open_bracket_ind + 1, close_bracket_ind)}`;
                 link = link.replace("{ADMIN}", "/admin/");
 
-                const myContent = new vscode.MarkdownString(`hey, nice ${type} baby!\n\n hehe [link](${link})`);
+                const myContent = new vscode.MarkdownString(`**Open in a browser:**\n\n [${link}](${link})\n\n**Documentation**\n\n[https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU](https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU)`);
                 myContent.isTrusted = true;
 
                 let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
@@ -339,12 +342,12 @@ function decorate(document: vscode.TextDocument) {
                     const entity_definition = entity_definitions[entity_name];
                     const entity_properties = Object.keys(entity_definition.properties);
                     if (entity_properties.length > 0) {
-                        definition_pretty_string += "\n\n\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
+                        definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
                     }
 
-                    //const definition_pretty_string = JSON.stringify(, null, 2).replace(/\n/g, "\n\n").replace(/\n\n\n\n/g, "\n\n");
+                    //const definition_pretty_string = JSON.stringify(, null, 2).replace(/\n/g, "\n\n").replace(/\n\n/g, "\n\n");
                     //console.log(definition_pretty_string);
-                    const myContent = new vscode.MarkdownString(`**Entity name:**\n\n\n\n${entity_name}${definition_pretty_string}\n\n\n\n**See definitions:**\n\n${reference_files_string}`);
+                    const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
                     myContent.isTrusted = true;
 
                     let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
@@ -357,4 +360,24 @@ function decorate(document: vscode.TextDocument) {
 
     editor.setDecorations(decorate_entity, entity_decorations);
     editor.setDecorations(decorate_annotation, annotation_decorations);
+}
+
+function deepMerge(...sources: any) {
+    let acc: any = {};
+    for (const source of sources) {
+        if (source instanceof Array) {
+            if (!(acc instanceof Array)) {
+                acc = [];
+            }
+            acc = [...acc, ...source];
+        } else if (source instanceof Object) {
+            for (let [key, value] of Object.entries(source)) {
+                if (value instanceof Object && key in acc) {
+                    value = deepMerge(acc[key], value);
+                }
+                acc = { ...acc, [key]: value };
+            }
+        }
+    }
+    return acc;
 }
