@@ -3,10 +3,26 @@
 import * as vscode from "vscode";
 import * as fs from 'fs';
 
+const engine = require('php-parser');
+
+// initialize a new parser instance
+const php_parser = new engine({
+    parser: {
+        //extractDoc: true,
+        php7: true,
+        locations: true,
+        suppressErrors: true,
+    },
+    ast: {
+        withPositions: true
+    }
+});
+
 const window = vscode.window;
 
 let entity_data_files: any = {};
 let entity_definitions: any = {};
+let code_parts_with_entity_in_current_editor: any = {};
 
 interface file_data {
     entity_name: any,
@@ -23,8 +39,13 @@ const decorate_entity = vscode.window.createTextEditorDecorationType({
     fontWeight: 'bold',
 });
 
+const decorate_expression = vscode.window.createTextEditorDecorationType({
+    backgroundColor: 'green'
+});
+
+// replaced with php parser yay
 //const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
-const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;
+//const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;
 
 let workspace_path = "";
 
@@ -75,25 +96,53 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    const provideCompletionItems = (document: vscode.TextDocument, position: vscode.Position) => {
+        const linePrefix = document.lineAt(position).text.substr(0, position.character);
+
+        //console.log(linePrefix);
+        const entity_name_index = linePrefix.lastIndexOf("__");
+        if (entity_name_index !== -1) {
+            for (const code_part_data of code_parts_with_entity_in_current_editor) {
+                if (code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
+                    const start_index = entity_name_index + 2;
+                    const match = linePrefix.substr(start_index).match(/\w*(["']\])?\[["']\w*/);
+                    //console.log(match, linePrefix, linePrefix.substr(start_index));
+                    if (match && match[0] && match[0].length === linePrefix.length - start_index) {
+                        return code_part_data.entity.suggestions;
+                    }
+                }
+                //console.log(code_part_data);
+            }
+
+
+            //console.log("code_parts_with_entity_in_current_editor", code_parts_with_entity_in_current_editor);
+            /*for (const code_part_data of code_parts_with_entity_in_current_editor) {
+                if (code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
+                    return code_part_data.entity.suggestions;
+                }
+                //console.log(code_part_data);
+            }*/
+        }
+
+        /*if (linePrefix.endsWith('["')) {
+            const matches = linePrefix.match(match_entities_regex);
+
+            if (matches) {
+                const entity_name = extractEntityName(matches[matches.length - 1]);
+
+                return entityFound(entity_name);
+            }
+        }*/
+        return noEntityFound();
+    };
+
     const provider = vscode.languages.registerCompletionItemProvider(
         'php',
         {
-            provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-                const linePrefix = document.lineAt(position).text.substr(0, position.character);
-
-                if (linePrefix.endsWith('["')) {
-                    const matches = linePrefix.match(match_entities_regex);
-
-                    if (matches) {
-                        const entity_name = extractEntityName(matches[matches.length - 1]);
-
-                        return entityFound(entity_name);
-                    }
-                }
-                return noEntityFound();
-            }
+            provideCompletionItems
         },
-        '"' // triggered whenever a '"' is being typed
+        `"`,
+        `'`
     );
 
     context.subscriptions.push(provider, disposable);
@@ -268,6 +317,159 @@ function extractEntityName(str: string) {
     return "";
 }
 
+function parseCodePart(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    //console.log(code_part, code_part.kind);
+    if (code_part.kind === "program") {
+        code_data = parseProgram(code_part);
+    } else if (code_part.kind === "function") {
+        code_data = parseFunction(code_part);
+    } else if (code_part.kind === "expressionstatement") {
+        code_data = parseExpressionStatement(code_part);
+    } else if (code_part.kind === "echo") {
+        code_data = parseExpressions(code_part);
+    } else if (code_part.kind === "offsetlookup") {
+        code_data = parseOffestLookup(code_part);
+    } else if (code_part.kind === "variable") {
+        code_data = parseVariable(code_part);
+    }
+
+    return code_data;
+}
+
+function getCodePartChildrenData(children: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    if (children) {
+        for (const sub_code_part of children) {
+            const sub_code_data = parseCodePart(sub_code_part);
+            code_data.push(...sub_code_data);
+        }
+    }
+
+    return code_data;
+}
+
+function parseProgram(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    code_data.push(...getCodePartChildrenData(code_part.children));
+
+    return code_data;
+}
+
+function parseFunction(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    console.log(code_part.body);
+    code_data.push(...getCodePartChildrenData(code_part.body.children));
+
+    return code_data;
+}
+
+function parseExpressionStatement(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    if (code_part.expression) {
+        switch (code_part.expression.kind) {
+            case "call":
+                //console.log("call", code_part);
+                // code_part.expression.what
+                // TODO: this is important AF!!!
+                // you wanna add a support for interfaces in functions and more probably,
+                // so an object can be passed, not just a few args that are clearly limiting developement
+                for (const sub_code_part of code_part.expression.arguments) {
+                    code_data.push(...parseExpression(sub_code_part));
+                }
+                break;
+            case "assign":
+                code_data.push(...parseExpression(code_part.expression.left));
+                code_data.push(...parseExpression(code_part.expression.right));
+                //console.log("assign", code_part);
+                break;
+        }
+    }
+
+    return code_data;
+}
+
+function parseExpressions(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    for (const expression of code_part.expressions) {
+        code_data.push(...parseExpression(expression));
+    }
+
+    return code_data;
+}
+
+function parseExpression(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    //console.log("357_code_part", code_part);
+    const loc = code_part.loc;
+
+    // nobody cares
+    /*code_data.push({
+        type: "expression",
+        loc: loc
+    });*/
+
+    code_data.push(...parseCodePart(code_part));
+
+
+    return code_data;
+}
+
+function parseVariable(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    const entity_name = extractEntityName(code_part.name);
+    if (entity_name) {
+        code_data.push(getEntityInCodeObj(code_part.loc, entity_name));
+    }
+
+    return code_data;
+}
+
+function parseOffestLookup(code_part: any): Array<any> {
+    let code_data: Array<any> = [];
+
+    let name_objs = [];
+    let previous_key_obj = code_part;
+    while (previous_key_obj && previous_key_obj.kind == "offsetlookup") {
+        if (previous_key_obj.what.kind == "variable") {
+            name_objs.push(previous_key_obj.what);
+        }
+        if (previous_key_obj.offset.kind == "string") {
+            name_objs.push(previous_key_obj.offset);
+        }
+        previous_key_obj = previous_key_obj.what;
+    }
+
+    for (const name_obj of name_objs) {
+        const name = name_obj.name ? name_obj.name : name_obj.value;
+        if (name) {
+            const entity_name = extractEntityName(name);
+            if (entity_name) {
+                code_data.push(getEntityInCodeObj(name_obj.loc, entity_name));
+            }
+        }
+    }
+
+    return code_data;
+}
+
+function getEntityInCodeObj(loc: any, entity_name: string) {
+    return {
+        loc: loc,
+        entity: {
+            name: entity_name,
+            suggestions: entityFound(entity_name),
+        }
+    };
+}
 
 function decorateActiveEditor() {
     const editor = vscode.window.activeTextEditor;
@@ -277,12 +479,68 @@ function decorateActiveEditor() {
 
     const document = editor.document;
 
-    let sourceCode = document.getText();
+    const sourceCode = document.getText();
 
     let annotation_decorations: vscode.DecorationOptions[] = [];
     let entity_decorations: vscode.DecorationOptions[] = [];
+    let expression_decorations: vscode.DecorationOptions[] = [];
 
     const sourceCodeArr = sourceCode.split('\n');
+
+    let temp_code_parts_with_entity_in_current_editor = [];
+
+    if (document.uri.path.endsWith(".php")) {
+        const php_parsed = php_parser.parseCode(sourceCode);
+        //console.log("xxx", php_parsed);
+
+        //console.log("await_code_data");
+
+        const code_data = parseCodePart(php_parsed);
+
+        //console.log("code_data", code_data);
+
+        for (const code_part_data of code_data) {
+            const loc = code_part_data.loc;
+
+            let range = new vscode.Range(
+                new vscode.Position(loc.start.line - 1, loc.start.column),
+                new vscode.Position(loc.end.line - 1, loc.end.column),
+            );
+
+            if (code_part_data.entity) {
+                const entity_name = code_part_data.entity.name;
+
+                temp_code_parts_with_entity_in_current_editor.push(code_part_data);
+                //code_part_data.entity.suggestions
+
+                // reference_files could also be semi cached once we find something, totally optional
+                // OR EVEN BETTER you can repeat the process for repeating entities or go for a singleton style
+                // butt... I don't think we will even need them lol
+                const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
+                    return data.entity_name === entity_name;
+                }).map(e => {
+                    return e[0];
+                });
+                const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
+
+                let definition_pretty_string = "";
+                const entity_definition = entity_definitions[entity_name];
+                const entity_properties = Object.keys(entity_definition.properties);
+                if (entity_properties.length > 0) {
+                    definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
+                }
+
+                const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
+                myContent.isTrusted = true;
+
+                let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+                entity_decorations.push(decoration);
+            }
+        }
+    }
+
+    code_parts_with_entity_in_current_editor = temp_code_parts_with_entity_in_current_editor;
 
     const sourceCodeArrLen = sourceCodeArr.length;
     for (let line_id = 0; line_id < sourceCodeArrLen; line_id++) {
@@ -314,52 +572,11 @@ function decorateActiveEditor() {
                 annotation_decorations.push(decoration);
             }
         }
-
-
-        const match_entities = line.match(match_entities_regex);
-
-        if (match_entities) {
-            for (const entity_match of match_entities) {
-                const entity_name = extractEntityName(entity_match);
-
-                const start_ind = line.indexOf(entity_match);
-
-                let range = new vscode.Range(
-                    new vscode.Position(line_id, start_ind),
-                    new vscode.Position(line_id, start_ind + entity_match.length)
-                );
-
-                const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
-                    return data.entity_name === entity_name;
-                }).map(e => {
-                    return e[0];
-                });
-
-                if (reference_files.length > 0) {
-                    const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
-
-                    let definition_pretty_string = "";
-                    const entity_definition = entity_definitions[entity_name];
-                    const entity_properties = Object.keys(entity_definition.properties);
-                    if (entity_properties.length > 0) {
-                        definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
-                    }
-
-                    //const definition_pretty_string = JSON.stringify(, null, 2).replace(/\n/g, "\n\n").replace(/\n\n/g, "\n\n");
-                    //console.log(definition_pretty_string);
-                    const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
-                    myContent.isTrusted = true;
-
-                    let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
-
-                    entity_decorations.push(decoration);
-                }
-            }
-        }
     }
 
     editor.setDecorations(decorate_entity, entity_decorations);
     editor.setDecorations(decorate_annotation, annotation_decorations);
+    editor.setDecorations(decorate_expression, expression_decorations);
 }
 
 function deepMerge(...sources: any) {
