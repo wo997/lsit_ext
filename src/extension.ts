@@ -22,7 +22,7 @@ const window = vscode.window;
 
 let entity_data_files: any = {};
 let entity_definitions: any = {};
-let code_parts_with_entity_in_current_editor: any = {};
+let code_data_in_current_editor: any = {};
 
 interface file_data {
     entity_name: any,
@@ -30,13 +30,19 @@ interface file_data {
 }
 
 const decorate_annotation = vscode.window.createTextEditorDecorationType({
-    color: '#c3a',
+    color: '#a3c',
     fontWeight: 'bold',
+    /*fontWeight: 'bold',
+    fontStyle: 'italic',
+    backgroundColor: '#005'*/
 });
 
 const decorate_entity = vscode.window.createTextEditorDecorationType({
-    color: '#44e',
+    /*color: '#44e',
+    fontWeight: 'bold',*/
     fontWeight: 'bold',
+    fontStyle: 'italic',
+    backgroundColor: '#024'
 });
 
 const decorate_expression = vscode.window.createTextEditorDecorationType({
@@ -99,40 +105,54 @@ export function activate(context: vscode.ExtensionContext) {
     const provideCompletionItems = (document: vscode.TextDocument, position: vscode.Position) => {
         const linePrefix = document.lineAt(position).text.substr(0, position.character);
 
-        //console.log(linePrefix);
+        // spot entity by __
         const entity_name_index = linePrefix.lastIndexOf("__");
         if (entity_name_index !== -1) {
-            for (const code_part_data of code_parts_with_entity_in_current_editor) {
-                if (code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
+            for (const code_part_data of code_data_in_current_editor) {
+                if (code_part_data.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
                     const start_index = entity_name_index + 2;
                     const match = linePrefix.substr(start_index).match(/\w*(["']\])?\[["']\w*/);
-                    //console.log(match, linePrefix, linePrefix.substr(start_index));
                     if (match && match[0] && match[0].length === linePrefix.length - start_index) {
                         return code_part_data.entity.suggestions;
                     }
                 }
-                //console.log(code_part_data);
             }
-
-
-            //console.log("code_parts_with_entity_in_current_editor", code_parts_with_entity_in_current_editor);
-            /*for (const code_part_data of code_parts_with_entity_in_current_editor) {
-                if (code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
-                    return code_part_data.entity.suggestions;
-                }
-                //console.log(code_part_data);
-            }*/
         }
 
-        /*if (linePrefix.endsWith('["')) {
-            const matches = linePrefix.match(match_entities_regex);
+        // spot function argument
+        for (const code_part_data of code_data_in_current_editor) {
+            //console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
+            if (code_part_data.entry && code_part_data.entry.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= position.character && code_part_data.loc.end.column >= position.character) {
+                let entity_name = code_part_data.entry.entity.name;
 
-            if (matches) {
-                const entity_name = extractEntityName(matches[matches.length - 1]);
+                //console.log("omw", { entity_name });
 
-                return entityFound(entity_name);
+                const entity_data = entity_definitions[entity_name];
+                //console.log({ entity_data });
+                if (!entity_data || !entity_data.properties) {
+                    continue;
+                }
+
+                let suggestions: any = [];
+                Object.entries(entity_data.properties).forEach(([property_name, property_data]: [any, any]) => {
+
+                    const completion_item = new vscode.CompletionItem(property_name, vscode.CompletionItemKind.Property)
+                    if (property_data.type) {
+                        completion_item.detail = property_data.type;
+                    }
+
+                    if (property_data.description) {
+                        completion_item.documentation = property_data.description;
+                    }
+                    suggestions.push(completion_item);
+                });
+                return suggestions;
+
+                //console.log("love");
             }
-        }*/
+        }
+
+
         return noEntityFound();
     };
 
@@ -146,6 +166,10 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(provider, disposable);
+
+    if (vscode.window.activeTextEditor) {
+        decorateActiveEditor(vscode.window.activeTextEditor.document.uri);
+    }
 }
 
 // this method is called when your extension is deactivated
@@ -291,20 +315,29 @@ function watchFiles() {
 
 function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
-        //console.log(`Did change: ${event.document.uri}`);
+        console.log(`Did change: ${event.document.uri}`);
 
-        decorateActiveEditor();
+        decorateActiveEditor(event.document.uri);
     });
 
-    vscode.window.onDidChangeActiveTextEditor(event => {
+    /*vscode.window.onDidChangeVisibleTextEditors(textEditors => {
+        console.log("vis", textEditors);
+        for (const editor of textEditors) {
+            console.log("vixs", editor.uri);
+        }
+    });*/
 
-        //console.log("heheh", event);
-        decorateActiveEditor();
+    vscode.window.onDidChangeActiveTextEditor(event => {
+        console.log("Did change editor", event);
+
+        if (event && event.document) {
+            decorateActiveEditor(event.document.uri);
+        }
     })
     vscode.workspace.onDidOpenTextDocument(document => {
-        //console.log(`Did open: ${document.uri}`);
+        console.log(`Did open: ${document.uri}`);
 
-        decorateActiveEditor();
+        decorateActiveEditor(document.uri);
     });
 }
 
@@ -317,124 +350,258 @@ function extractEntityName(str: string) {
     return "";
 }
 
-function parseCodePart(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
-
-    //console.log(code_part, code_part.kind);
-    if (code_part.kind === "program") {
-        code_data = parseProgram(code_part);
-    } else if (code_part.kind === "function") {
-        code_data = parseFunction(code_part);
-    } else if (code_part.kind === "expressionstatement") {
-        code_data = parseExpressionStatement(code_part);
-    } else if (code_part.kind === "echo") {
-        code_data = parseExpressions(code_part);
-    } else if (code_part.kind === "offsetlookup") {
-        code_data = parseOffestLookup(code_part);
-    } else if (code_part.kind === "variable") {
-        code_data = parseVariable(code_part);
-    }
-
-    return code_data;
+interface codeDataFull {
+    code_data: Array<any>,
+    buffer: any
 }
 
-function getCodePartChildrenData(children: any): Array<any> {
-    let code_data: Array<any> = [];
+function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
+    //console.log("cp+kind", code_part, code_part.kind);
 
-    if (children) {
-        for (const sub_code_part of children) {
-            const sub_code_data = parseCodePart(sub_code_part);
-            code_data.push(...sub_code_data);
+    buffer = cloneObject(buffer);
+
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    console.log("some_code_part: " + code_part.kind, code_part);
+
+    // say how far the parent expression is
+    if (buffer.function) {
+        buffer.function.levels++;
+    }
+    if (buffer.array) {
+        buffer.array.levels++;
+    }
+    if (buffer.entity) {
+        buffer.entity.levels++;
+    }
+
+    switch (code_part.kind) {
+        case "program":
+            code_data_full = parseProgram(code_part, buffer);
+            break;
+        case "function":
+            code_data_full = parseFunction(code_part, buffer);
+            break;
+        case "expressionstatement":
+            code_data_full = parseExpressionStatement(code_part, buffer);
+            break;
+        case "echo":
+            code_data_full = parseExpressions(code_part, buffer);
+            break;
+        case "offsetlookup":
+            code_data_full = parseOffestLookup(code_part, buffer);
+            break;
+        case "variable":
+            code_data_full = parseVariable(code_part, buffer);
+            break;
+        case "array":
+            code_data_full = parseArray(code_part, buffer);
+            break;
+        case "entry":
+            code_data_full = parseEntry(code_part, buffer);
+            break;
+        case "call":
+            code_data_full = parseCall(code_part, buffer);
+            break;
+        case "assign":
+            code_data_full = parseAssign(code_part, buffer);
+            break;
+    }
+
+
+    //console.log("some_code_part_Red", code_data_full);
+
+
+    return code_data_full;
+}
+
+function parseProgram(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    for (const sub_code_part of code_part.children) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+
+    return code_data_full;
+}
+
+/* it's a definition, not usage */
+function parseFunction(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    for (const sub_code_part of code_part.children) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+    return code_data_full;
+}
+
+function parseArray(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    //let entity_name = null;
+    //console.log("hey", buffer.function, buffer.function.levels == 1, buffer.argument);
+    if (buffer.function && buffer.function.levels === 1 && buffer.argument) {
+        //console.log("it's ", code_part);
+        // TODO: you have to extract that data from somewhere else for sure, that should be ezy man
+        if (buffer.function.name == "paginateData" && buffer.argument.index === 0) {
+            //entity_name = "pagination_params"
+            buffer.entity = {
+                name: "pagination_params",
+                levels: 0,
+            };
+        }
+
+
+        if (buffer.argument.index !== null) {
+            console.log("argument.index ", buffer.argument.index);
         }
     }
 
-    return code_data;
+    //console.log({ code_part_items: code_part.items });
+    let array_index = -1;
+    for (const sub_code_part of code_part.items) {
+        array_index++;
+        buffer.array = {
+            index: array_index,
+            levels: 0,
+        };
+        //console.log("arr", sub_code_part);
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+
+    return code_data_full;
 }
 
-function parseProgram(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
+function parseEntry(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
 
-    code_data.push(...getCodePartChildrenData(code_part.children));
+    //console.log({ buffer });
 
-    return code_data;
+    if ((!code_part.key || code_part.key?.kind === "string") && buffer.entity && buffer.entity.levels === 1) {
+        const entry_text = code_part.key ? code_part.key.value : null;
+        const loc = code_part.key ? code_part.key.loc : code_part.loc;
+
+        code_data_full.code_data.push({
+            loc: loc,
+            entry: {
+                text: entry_text,
+                entity: buffer.entity
+            },
+        });
+    }
+
+    return code_data_full;
 }
 
-function parseFunction(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
+/* actual function execution ;) */
+function parseCall(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
 
-    console.log(code_part.body);
-    code_data.push(...getCodePartChildrenData(code_part.body.children));
+    code_data_full.buffer.function = {
+        name: code_part.what.name,
+        levels: 0,
+    };
 
-    return code_data;
-}
+    //console.log("buffer", code_data_full.buffer, code_part.what.name);
 
-function parseExpressionStatement(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
-
-    if (code_part.expression) {
-        switch (code_part.expression.kind) {
-            case "call":
-                //console.log("call", code_part);
-                // code_part.expression.what
-                // TODO: this is important AF!!!
-                // you wanna add a support for interfaces in functions and more probably,
-                // so an object can be passed, not just a few args that are clearly limiting developement
-                for (const sub_code_part of code_part.expression.arguments) {
-                    code_data.push(...parseExpression(sub_code_part));
-                }
-                break;
-            case "assign":
-                code_data.push(...parseExpression(code_part.expression.left));
-                code_data.push(...parseExpression(code_part.expression.right));
-                //console.log("assign", code_part);
-                break;
+    //console.log("parseCall", code_part);
+    let arg_index = 0;
+    for (const sub_code_part of code_part.arguments) {
+        buffer.argument = {
+            index: arg_index,
+            levels: 0
         }
+        arg_index++;
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
     }
 
-    return code_data;
+    return code_data_full;
 }
 
-function parseExpressions(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
-
-    for (const expression of code_part.expressions) {
-        code_data.push(...parseExpression(expression));
+function parseAssign(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
     }
 
-    return code_data;
+    const sub_code_data_full_left = parseCodePart(code_part.left, buffer);
+    code_data_full.code_data.push(...sub_code_data_full_left.code_data);
+    code_data_full.buffer.push(...sub_code_data_full_left.buffer);
+
+    const sub_code_data_full_right = parseCodePart(code_part.right, buffer);
+    code_data_full.code_data.push(...sub_code_data_full_right.code_data);
+    code_data_full.buffer.push(...sub_code_data_full_right.buffer);
+
+    return code_data_full;
 }
 
-function parseExpression(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
-
-    //console.log("357_code_part", code_part);
-    const loc = code_part.loc;
-
-    // nobody cares
-    /*code_data.push({
-        type: "expression",
-        loc: loc
-    });*/
-
-    code_data.push(...parseCodePart(code_part));
-
-
-    return code_data;
+function parseExpressionStatement(code_part: any, buffer: any): codeDataFull {
+    return parseCodePart(code_part.expression);
 }
 
-function parseVariable(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
+function parseExpressions(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    //console.log("echo", code_part.expressions);
+    for (const sub_code_part of code_part.expressions) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+
+    return code_data_full;
+}
+
+function parseVariable(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
 
     const entity_name = extractEntityName(code_part.name);
     if (entity_name) {
-        code_data.push(getEntityInCodeObj(code_part.loc, entity_name));
+        code_data_full.code_data.push(getEntityInCodeObj(code_part.loc, entity_name));
     }
 
-    return code_data;
+    return code_data_full;
 }
 
-function parseOffestLookup(code_part: any): Array<any> {
-    let code_data: Array<any> = [];
+function parseOffestLookup(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    //console.log("buffer", code_data_full.buffer);
 
     let name_objs = [];
     let previous_key_obj = code_part;
@@ -453,12 +620,12 @@ function parseOffestLookup(code_part: any): Array<any> {
         if (name) {
             const entity_name = extractEntityName(name);
             if (entity_name) {
-                code_data.push(getEntityInCodeObj(name_obj.loc, entity_name));
+                code_data_full.code_data.push(getEntityInCodeObj(name_obj.loc, entity_name));
             }
         }
     }
 
-    return code_data;
+    return code_data_full;
 }
 
 function getEntityInCodeObj(loc: any, entity_name: string) {
@@ -471,9 +638,9 @@ function getEntityInCodeObj(loc: any, entity_name: string) {
     };
 }
 
-function decorateActiveEditor() {
+function decorateActiveEditor(uri: vscode.Uri) {
     const editor = vscode.window.activeTextEditor;
-    if (!editor?.document) {
+    if (!editor?.document || editor.document.uri !== uri) {
         return;
     }
 
@@ -487,7 +654,7 @@ function decorateActiveEditor() {
 
     const sourceCodeArr = sourceCode.split('\n');
 
-    let temp_code_parts_with_entity_in_current_editor = [];
+    let temp_code_data_in_current_editor = [];
 
     if (document.uri.path.endsWith(".php")) {
         const php_parsed = php_parser.parseCode(sourceCode);
@@ -495,9 +662,12 @@ function decorateActiveEditor() {
 
         //console.log("await_code_data");
 
-        const code_data = parseCodePart(php_parsed);
+        const code_data_full = parseCodePart(php_parsed);
+        const code_data = code_data_full.code_data;
 
-        //console.log("code_data", code_data);
+        temp_code_data_in_current_editor = code_data;
+
+        console.log("code_data", code_data);
 
         for (const code_part_data of code_data) {
             const loc = code_part_data.loc;
@@ -510,7 +680,6 @@ function decorateActiveEditor() {
             if (code_part_data.entity) {
                 const entity_name = code_part_data.entity.name;
 
-                temp_code_parts_with_entity_in_current_editor.push(code_part_data);
                 //code_part_data.entity.suggestions
 
                 // reference_files could also be semi cached once we find something, totally optional
@@ -537,10 +706,44 @@ function decorateActiveEditor() {
 
                 entity_decorations.push(decoration);
             }
+
+            if (code_part_data.entry) {
+                const prop_name = code_part_data.entry.text;
+
+                const entity_name = code_part_data.entry.entity.name;
+                const entity_definition = entity_definitions[code_part_data.entry.entity.name];
+                if (!entity_definition || !entity_definition.properties || !Object.keys(entity_definition.properties).includes(prop_name)) {
+                    continue;
+                }
+
+                let description = "";
+                const property_obj: any = Object.entries(entity_definition.properties).find(([name, props]) => {
+                    return name === prop_name;
+                });
+                if (property_obj) {
+                    const property_data = property_obj[1];
+                    if (property_data.type) {
+                        description += `**Type:**\n\n${property_data.type}`;
+                    }
+                    if (property_data.description) {
+                        description += `\n\n**Description:**\n\n${property_data.description}`;
+                    }
+                    description += `\n\n**Instance of:**\n\n${entity_name}`;
+                    description += `\n\n**Property name:**\n\n${prop_name}`;
+                }
+
+                const myContent = new vscode.MarkdownString(description);
+                myContent.isTrusted = true;
+
+                let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+                // that's kinda fake, it is actually an entry decoration but I use it as a style
+                entity_decorations.push(decoration);
+            }
         }
     }
 
-    code_parts_with_entity_in_current_editor = temp_code_parts_with_entity_in_current_editor;
+    code_data_in_current_editor = temp_code_data_in_current_editor;
 
     const sourceCodeArrLen = sourceCodeArr.length;
     for (let line_id = 0; line_id < sourceCodeArrLen; line_id++) {
@@ -577,6 +780,8 @@ function decorateActiveEditor() {
     editor.setDecorations(decorate_entity, entity_decorations);
     editor.setDecorations(decorate_annotation, annotation_decorations);
     editor.setDecorations(decorate_expression, expression_decorations);
+
+    console.log("set_decorations");
 }
 
 function deepMerge(...sources: any) {
@@ -597,4 +802,15 @@ function deepMerge(...sources: any) {
         }
     }
     return acc;
+}
+
+function cloneObject(obj: any) {
+    var clone: any = {};
+    for (var i in obj) {
+        if (obj[i] != null && typeof (obj[i]) == "object")
+            clone[i] = cloneObject(obj[i]);
+        else
+            clone[i] = obj[i];
+    }
+    return clone;
 }
