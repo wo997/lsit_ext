@@ -380,6 +380,9 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
     if (buffer.assign) {
         buffer.assign.levels++;
     }
+    if (buffer.key) {
+        buffer.key.levels++;
+    }
 
     switch (code_part.kind) {
         case "program":
@@ -499,7 +502,7 @@ function parseEntry(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    console.log({ buffer });
+    console.log("ENTRY BUFFER", { buffer }, {});
 
     //const key = code_part.key;
     // we let it be a value so the user can see it highlighted ;)
@@ -509,30 +512,53 @@ function parseEntry(code_part: any, buffer: any): codeDataFull {
         const entry_text = pseudo_key ? pseudo_key.value : null;
         const loc = pseudo_key ? pseudo_key.loc : code_part.loc;
 
-        let entity = null;
+        let from_entity = null;
 
         if (buffer.assign && buffer.assign.levels === 2) {
-            const left = buffer.assign.left;
-            const entity_name = extractEntityName(left.name);
-            if (left.kind == "variable" && entity_name) {
-                entity = {
+            const entity_name = extractEntityName(buffer.assign.left.name);
+            if (buffer.assign.left.kind == "variable" && entity_name) {
+                from_entity = {
+                    name: entity_name
+                }
+            }
+        }
+        if (buffer.key && buffer.key.levels === 2) {
+            const entity_name = extractEntityName(buffer.key.text);
+            if (entity_name) {
+                from_entity = {
                     name: entity_name
                 }
             }
         }
         else if (buffer.entity && buffer.entity.levels === 1) {
-            entity = buffer.entity;
+            from_entity = buffer.entity;
         }
 
-        if (entity) {
+        if (from_entity) {
             code_data_full.code_data.push({
                 loc: loc,
                 entry: {
                     text: entry_text,
-                    entity: entity
+                    entity: from_entity
                 },
             });
         }
+
+        const entity_from_key_name = extractEntityName(entry_text);
+        if (entity_from_key_name) {
+            code_data_full.code_data.push(getEntityInCodeObj(loc, entity_from_key_name));
+        }
+    }
+
+    if (code_part.key && code_part.key.kind === "string" && code_part.value) {
+        buffer.key = {
+            text: code_part.key.value,
+            levels: 0,
+        };
+
+        const sub_code_data_full = parseCodePart(code_part.value, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
     }
 
     return code_data_full;
@@ -632,7 +658,7 @@ function parseOffestLookup(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    //console.log("buffer", code_data_full.buffer);
+    //console.log("buffer", buffer);
 
     let name_objs = [];
     let previous_key_obj = code_part;
@@ -677,6 +703,24 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     const document = editor.document;
 
+    /*const actualSourceCode = document.getText();
+
+    const actual_php_parsed = php_parser.parseCode(actualSourceCode, {
+        parser: {
+            suppressErrors: false,
+        },
+    });
+
+
+    const actualSourceCodeArr = actualSourceCode.split('\n');
+    const char_prev = actualSourceCode[editor.selection.start.line][editor.selection.start.character-1];
+    const char_next = actualSourceCode[editor.selection.start.line][editor.selection.end.character+1];
+    if ( == "" && actualSourceCode[editor.selection.start.line][editor.selection.start.character+1] == '"') {
+
+    }*/
+
+
+
     const sourceCode = document.getText();
 
     let annotation_decorations: vscode.DecorationOptions[] = [];
@@ -689,88 +733,98 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     if (document.uri.path.endsWith(".php")) {
         const php_parsed = php_parser.parseCode(sourceCode);
-        //console.log("xxx", php_parsed);
+        console.log("xxx", php_parsed);
 
-        //console.log("await_code_data");
+        console.log("await_code_data");
+        const d = new Date();
 
-        const code_data_full = parseCodePart(php_parsed);
-        const code_data = code_data_full.code_data;
+        try {
+            const code_data_full = parseCodePart(php_parsed);
 
-        temp_code_data_in_current_editor = code_data;
+            const code_data = code_data_full.code_data;
 
-        console.log("code_data", code_data);
+            console.log("has_code_data " + ((new Date()).getTime() - d.getTime()).toString());
 
-        for (const code_part_data of code_data) {
-            const loc = code_part_data.loc;
+            temp_code_data_in_current_editor = code_data;
 
-            let range = new vscode.Range(
-                new vscode.Position(loc.start.line - 1, loc.start.column),
-                new vscode.Position(loc.end.line - 1, loc.end.column),
-            );
+            //console.log("code_data", code_data);
 
-            if (code_part_data.entity) {
-                const entity_name = code_part_data.entity.name;
+            for (const code_part_data of code_data) {
+                const loc = code_part_data.loc;
 
-                //code_part_data.entity.suggestions
+                let range = new vscode.Range(
+                    new vscode.Position(loc.start.line - 1, loc.start.column),
+                    new vscode.Position(loc.end.line - 1, loc.end.column),
+                );
 
-                // reference_files could also be semi cached once we find something, totally optional
-                // OR EVEN BETTER you can repeat the process for repeating entities or go for a singleton style
-                // butt... I don't think we will even need them lol
-                const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
-                    return data.entity_name === entity_name;
-                }).map(e => {
-                    return e[0];
-                });
-                const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
+                if (code_part_data.entity) {
+                    const entity_name = code_part_data.entity.name;
 
-                let definition_pretty_string = "";
-                const entity_definition = entity_definitions[entity_name];
-                const entity_properties = Object.keys(entity_definition.properties);
-                if (entity_properties.length > 0) {
-                    definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
-                }
+                    //code_part_data.entity.suggestions
 
-                const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
-                myContent.isTrusted = true;
+                    // reference_files could also be semi cached once we find something, totally optional
+                    // OR EVEN BETTER you can repeat the process for repeating entities or go for a singleton style
+                    // butt... I don't think we will even need them lol
+                    const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
+                        return data.entity_name === entity_name;
+                    }).map(e => {
+                        return e[0];
+                    });
+                    const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
 
-                let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
-
-                entity_decorations.push(decoration);
-            }
-
-            if (code_part_data.entry) {
-                const prop_name = code_part_data.entry.text;
-
-                const entity_name = code_part_data.entry.entity.name;
-                const entity_definition = entity_definitions[code_part_data.entry.entity.name];
-                if (!entity_definition || !entity_definition.properties || !Object.keys(entity_definition.properties).includes(prop_name)) {
-                    continue;
-                }
-
-                let description = "";
-                const property_obj: any = Object.entries(entity_definition.properties).find(([name, props]) => {
-                    return name === prop_name;
-                });
-                if (property_obj) {
-                    const property_data = property_obj[1];
-                    if (property_data.type) {
-                        description += `**Type:**\n\n${property_data.type}`;
+                    let definition_pretty_string = "";
+                    const entity_definition = entity_definitions[entity_name];
+                    const entity_properties = Object.keys(entity_definition.properties);
+                    if (entity_properties.length > 0) {
+                        definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
                     }
-                    if (property_data.description) {
-                        description += `\n\n**Description:**\n\n${property_data.description}`;
-                    }
-                    description += `\n\n**Instance of:**\n\n${entity_name}`;
-                    description += `\n\n**Property name:**\n\n${prop_name}`;
+
+                    const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
+                    myContent.isTrusted = true;
+
+                    let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+                    entity_decorations.push(decoration);
                 }
 
-                const myContent = new vscode.MarkdownString(description);
-                myContent.isTrusted = true;
+                if (code_part_data.entry) {
+                    const prop_name = code_part_data.entry.text;
 
-                let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+                    const entity_name = code_part_data.entry.entity.name;
+                    const entity_definition = entity_definitions[code_part_data.entry.entity.name];
+                    if (!entity_definition || !entity_definition.properties || !Object.keys(entity_definition.properties).includes(prop_name)) {
+                        continue;
+                    }
 
-                // that's kinda fake, it is actually an entry decoration but I use it as a style
-                entity_decorations.push(decoration);
+                    let description = "";
+                    const property_obj: any = Object.entries(entity_definition.properties).find(([name, props]) => {
+                        return name === prop_name;
+                    });
+                    if (property_obj) {
+                        const property_data = property_obj[1];
+                        if (property_data.type) {
+                            description += `**Type:**\n\n${property_data.type}`;
+                        }
+                        if (property_data.description) {
+                            description += `\n\n**Description:**\n\n${property_data.description}`;
+                        }
+                        description += `\n\n**Instance of:**\n\n${entity_name}`;
+                        description += `\n\n**Property name:**\n\n${prop_name}`;
+                    }
+
+                    const myContent = new vscode.MarkdownString(description);
+                    myContent.isTrusted = true;
+
+                    let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+                    // that's kinda fake, it is actually an entry decoration but I use it as a style
+                    entity_decorations.push(decoration);
+                }
             }
+        } catch (e) {
+            console.error('get code data errors:', e);
+        } finally {
+            console.error('fuck meeee');
         }
     }
 
