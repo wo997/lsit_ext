@@ -315,7 +315,7 @@ function watchFiles() {
 
 function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
-        console.log(`Did change: ${event.document.uri}`);
+        console.log(`Did change: ${event.document.uri}`, event);
 
         decorateActiveEditor(event.document.uri);
     });
@@ -415,6 +415,19 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
         case "assign":
             code_data_full = parseAssign(code_part, buffer);
             break;
+        case "if":
+            code_data_full = parseIf(code_part, buffer);
+            break;
+        case "block":
+            code_data_full = parseBlock(code_part, buffer);
+            break;
+        case "class":
+            code_data_full = parseClass(code_part, buffer);
+            break;
+        case "method":
+            code_data_full = parseMethod(code_part, buffer);
+            break;
+
     }
 
 
@@ -439,7 +452,6 @@ function parseProgram(code_part: any, buffer: any): codeDataFull {
     return code_data_full;
 }
 
-/* it's a definition, not usage */
 function parseFunction(code_part: any, buffer: any): codeDataFull {
     let code_data_full: codeDataFull = {
         code_data: [],
@@ -453,6 +465,66 @@ function parseFunction(code_part: any, buffer: any): codeDataFull {
     }
     return code_data_full;
 }
+
+function parseMethod(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    for (const sub_code_part of code_part.body.children) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+    return code_data_full;
+}
+
+function parseBlock(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    for (const sub_code_part of code_part.children) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+    return code_data_full;
+}
+
+function parseClass(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    for (const sub_code_part of code_part.body) {
+        const sub_code_data_full = parseCodePart(sub_code_part, buffer);
+        code_data_full.code_data.push(...sub_code_data_full.code_data);
+        deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
+    }
+    return code_data_full;
+}
+
+function parseIf(code_part: any, buffer: any): codeDataFull {
+    let code_data_full: codeDataFull = {
+        code_data: [],
+        buffer: buffer,
+    }
+
+    const test_code_data_full = parseCodePart(code_part.test, buffer);
+    code_data_full.code_data.push(...test_code_data_full.code_data);
+    deepMerge(code_data_full.buffer, test_code_data_full.buffer);
+
+    const body_code_data_full = parseCodePart(code_part.body, buffer);
+    code_data_full.code_data.push(...body_code_data_full.code_data);
+    deepMerge(code_data_full.buffer, body_code_data_full.buffer);
+
+    return code_data_full;
+}
+
 
 function parseArray(code_part: any, buffer: any): codeDataFull {
     let code_data_full: codeDataFull = {
@@ -732,7 +804,13 @@ function decorateActiveEditor(uri: vscode.Uri) {
     let temp_code_data_in_current_editor = [];
 
     if (document.uri.path.endsWith(".php")) {
+        const d0 = new Date();
         const php_parsed = php_parser.parseCode(sourceCode);
+
+        // parsing the file is really quick, you can literally do it every time for up to 1000 lines files with about 100ms delay
+        // TODO you might need to parse just the part of code that was just edited or u can work on the set that u have adn modify it
+        // I would rather parse each piece again yup and we gotta use the buffer
+        console.log("ohbaby " + ((new Date()).getTime() - d0.getTime()).toString());
         console.log("xxx", php_parsed);
 
         console.log("await_code_data");
