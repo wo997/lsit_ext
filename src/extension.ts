@@ -443,7 +443,7 @@ function parseFunction(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    for (const sub_code_part of code_part.children) {
+    for (const sub_code_part of code_part.body.children) {
         const sub_code_data_full = parseCodePart(sub_code_part, buffer);
         code_data_full.code_data.push(...sub_code_data_full.code_data);
         deepMerge(code_data_full.buffer, sub_code_data_full.buffer);
