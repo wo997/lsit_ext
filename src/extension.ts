@@ -121,11 +121,11 @@ export function activate(context: vscode.ExtensionContext) {
 
         // spot function argument
         for (const code_part_data of code_data_in_current_editor) {
-            //console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
+            console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
             if (code_part_data.entry && code_part_data.entry.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= position.character && code_part_data.loc.end.column >= position.character) {
                 let entity_name = code_part_data.entry.entity.name;
 
-                //console.log("omw", { entity_name });
+                console.log("omw", code_part_data, { entity_name });
 
                 const entity_data = entity_definitions[entity_name];
                 //console.log({ entity_data });
@@ -377,6 +377,9 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
     if (buffer.entity) {
         buffer.entity.levels++;
     }
+    if (buffer.assign) {
+        buffer.assign.levels++;
+    }
 
     switch (code_part.kind) {
         case "program":
@@ -496,19 +499,40 @@ function parseEntry(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    //console.log({ buffer });
+    console.log({ buffer });
 
-    if ((!code_part.key || code_part.key?.kind === "string") && buffer.entity && buffer.entity.levels === 1) {
-        const entry_text = code_part.key ? code_part.key.value : null;
-        const loc = code_part.key ? code_part.key.loc : code_part.loc;
+    //const key = code_part.key;
+    // we let it be a value so the user can see it highlighted ;)
+    const pseudo_key = code_part.key ? code_part.key : code_part.value;
 
-        code_data_full.code_data.push({
-            loc: loc,
-            entry: {
-                text: entry_text,
-                entity: buffer.entity
-            },
-        });
+    if (pseudo_key && pseudo_key.kind === "string") {
+        const entry_text = pseudo_key ? pseudo_key.value : null;
+        const loc = pseudo_key ? pseudo_key.loc : code_part.loc;
+
+        let entity = null;
+
+        if (buffer.assign && buffer.assign.levels === 2) {
+            const left = buffer.assign.left;
+            const entity_name = extractEntityName(left.name);
+            if (left.kind == "variable" && entity_name) {
+                entity = {
+                    name: entity_name
+                }
+            }
+        }
+        else if (buffer.entity && buffer.entity.levels === 1) {
+            entity = buffer.entity;
+        }
+
+        if (entity) {
+            code_data_full.code_data.push({
+                loc: loc,
+                entry: {
+                    text: entry_text,
+                    entity: entity
+                },
+            });
+        }
     }
 
     return code_data_full;
@@ -552,11 +576,16 @@ function parseAssign(code_part: any, buffer: any): codeDataFull {
 
     const sub_code_data_full_left = parseCodePart(code_part.left, buffer);
     code_data_full.code_data.push(...sub_code_data_full_left.code_data);
-    code_data_full.buffer.push(...sub_code_data_full_left.buffer);
+    deepMerge(code_data_full.buffer, sub_code_data_full_left.buffer);
+
+    buffer.assign = {
+        left: code_part.left,
+        levels: 0
+    }
 
     const sub_code_data_full_right = parseCodePart(code_part.right, buffer);
     code_data_full.code_data.push(...sub_code_data_full_right.code_data);
-    code_data_full.buffer.push(...sub_code_data_full_right.buffer);
+    deepMerge(code_data_full.buffer, sub_code_data_full_right.buffer);
 
     return code_data_full;
 }
@@ -587,9 +616,11 @@ function parseVariable(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    const entity_name = extractEntityName(code_part.name);
-    if (entity_name) {
-        code_data_full.code_data.push(getEntityInCodeObj(code_part.loc, entity_name));
+    if (code_part.name) {
+        const entity_name = extractEntityName(code_part.name);
+        if (entity_name) {
+            code_data_full.code_data.push(getEntityInCodeObj(code_part.loc, entity_name));
+        }
     }
 
     return code_data_full;
