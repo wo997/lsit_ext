@@ -2,6 +2,8 @@
 
 import * as vscode from "vscode";
 import * as fs from 'fs';
+import { Program, Block } from 'php-parser';
+
 
 const engine = require('php-parser');
 
@@ -23,6 +25,12 @@ const window = vscode.window;
 let entity_data_files: any = {};
 let entity_definitions: any = {};
 let code_data_in_current_editor: any = {};
+let visibleRanges: vscode.Range[] | undefined = undefined;
+let visibleRangesEventTimeout: any = null;
+let visibleRangesEventInterval: any = null;
+let scrolling_speed = 0;
+
+let php_parsed: any = null;
 
 interface file_data {
     entity_name: any,
@@ -339,6 +347,37 @@ function initSyntaxDecorator() {
 
         decorateActiveEditor(document.uri);
     });
+
+    vscode.window.onDidChangeTextEditorVisibleRanges(event => {
+        // needs some delay!
+        if (event.textEditor.document.uri !== vscode.window.activeTextEditor?.document.uri) {
+            return;
+        }
+
+        if (!visibleRangesEventInterval) {
+            visibleRangesEventInterval = setInterval(() => {
+                if (visibleRanges) {
+                    scrolling_speed = event.visibleRanges[0].start.line - visibleRanges[0].start.line;
+                }
+                decorateActiveEditor(event.textEditor.document.uri);
+            }, 200);
+        }
+
+        if (visibleRangesEventTimeout) {
+            clearTimeout(visibleRangesEventTimeout);
+        }
+
+        visibleRangesEventTimeout = setTimeout(() => {
+            if (visibleRangesEventInterval) {
+                clearInterval(visibleRangesEventInterval);
+                visibleRangesEventInterval = null;
+            }
+            visibleRangesEventTimeout = null;
+
+            scrolling_speed = 0;
+            decorateActiveEditor(event.textEditor.document.uri);
+        }, 200);
+    });
 }
 
 function extractEntityName(str: string) {
@@ -365,7 +404,41 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
         buffer: buffer,
     }
 
-    console.log("some_code_part: " + code_part.kind, code_part);
+    if (!visibleRanges) {
+        return code_data_full;
+    }
+    const visibleRange = visibleRanges[0];
+
+    if (visibleRange.start === null || visibleRange.end === null) {
+        //console.log("fuck no");
+
+        return code_data_full;
+    }
+
+
+    //console.log(JSON.stringify(visibleRange), Object.keys(visibleRange));
+    const cx0 = code_part.loc.start.column;
+    const cy0 = code_part.loc.start.line - 1;
+    const cx1 = code_part.loc.end.column;
+    const cy1 = code_part.loc.end.line - 1;
+    //const vx0 = visibleRange.start.character;
+    //console.log(scrolling_speed);
+    const vy0 = visibleRange.start.line - 20 + 20 * Math.sign(scrolling_speed);
+    //const vx1 = visibleRange.endcharacter;
+    const vy1 = visibleRange.end.line + 20 + 20 * Math.sign(scrolling_speed);
+
+    //cx1 >= vx0 &&//cx0 <= vx1 &&
+    if (cy0 <= vy1 && cy1 >= vy0) {
+        // code part is visible - optimisation purpose, from 30ms on 2000 lines to 4ms, worth it? kinda
+        //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+    }
+    else {
+        //console.log("outside", code_part);
+        //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+        return code_data_full;
+    }
+
+    //console.log("some_code_part: " + code_part.kind, code_part);
 
     // say how far the parent expression is
     if (buffer.function) {
@@ -437,7 +510,8 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
     return code_data_full;
 }
 
-function parseProgram(code_part: any, buffer: any): codeDataFull {
+function parseProgram(code_part: Program, buffer: any): codeDataFull {
+    code_part.children
     let code_data_full: codeDataFull = {
         code_data: [],
         buffer: buffer,
@@ -480,7 +554,7 @@ function parseMethod(code_part: any, buffer: any): codeDataFull {
     return code_data_full;
 }
 
-function parseBlock(code_part: any, buffer: any): codeDataFull {
+function parseBlock(code_part: Block, buffer: any): codeDataFull {
     let code_data_full: codeDataFull = {
         code_data: [],
         buffer: buffer,
@@ -546,9 +620,9 @@ function parseArray(code_part: any, buffer: any): codeDataFull {
         }
 
 
-        if (buffer.argument.index !== null) {
+        /*if (buffer.argument.index !== null) {
             console.log("argument.index ", buffer.argument.index);
-        }
+        }*/
     }
 
     //console.log({ code_part_items: code_part.items });
@@ -574,7 +648,7 @@ function parseEntry(code_part: any, buffer: any): codeDataFull {
         buffer: buffer,
     }
 
-    console.log("ENTRY BUFFER", { buffer }, {});
+    //console.log("ENTRY BUFFER", { buffer });
 
     //const key = code_part.key;
     // we let it be a value so the user can see it highlighted ;)
@@ -803,25 +877,36 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     let temp_code_data_in_current_editor = [];
 
-    if (document.uri.path.endsWith(".php")) {
+    visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
+
+    if (document.uri.path.endsWith(".php") && visibleRanges && visibleRanges[0]) {
         const d0 = new Date();
-        const php_parsed = php_parser.parseCode(sourceCode);
+
+        php_parsed = php_parser.parseCode(sourceCode);
+
+        //console.log("PoSiTiOn", visibleRanges);
+
+        /*if (!php_parsed) {
+        }*/
+
+        //const php_parsed = php_parser.parseCode(sourceCode);
 
         // parsing the file is really quick, you can literally do it every time for up to 1000 lines files with about 100ms delay
         // TODO you might need to parse just the part of code that was just edited or u can work on the set that u have adn modify it
         // I would rather parse each piece again yup and we gotta use the buffer
-        console.log("ohbaby " + ((new Date()).getTime() - d0.getTime()).toString());
-        console.log("xxx", php_parsed);
+        console.log("Parse AST time: " + ((new Date()).getTime() - d0.getTime()).toString());
+        //console.log("xxx", php_parsed);
 
-        console.log("await_code_data");
-        const d = new Date();
+        //console.log("await_code_data");
 
         try {
+            const d = new Date();
+
             const code_data_full = parseCodePart(php_parsed);
 
             const code_data = code_data_full.code_data;
 
-            console.log("has_code_data " + ((new Date()).getTime() - d.getTime()).toString());
+            console.log("Parse visible code time " + ((new Date()).getTime() - d.getTime()).toString());
 
             temp_code_data_in_current_editor = code_data;
 
@@ -944,7 +1029,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
     editor.setDecorations(decorate_annotation, annotation_decorations);
     editor.setDecorations(decorate_expression, expression_decorations);
 
-    console.log("set_decorations");
+    console.log("Set decorations");
 }
 
 function deepMerge(...sources: any) {
