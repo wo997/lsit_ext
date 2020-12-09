@@ -26,9 +26,7 @@ let entity_data_files: any = {};
 let entity_definitions: any = {};
 let code_data_in_current_editor: any = {};
 let visibleRanges: vscode.Range[] | undefined = undefined;
-let visibleRangesEventTimeout: any = null;
-let visibleRangesEventInterval: any = null;
-let scrolling_speed = 0;
+let textChangeEventTimeout: any = null;
 
 let php_parsed: any = null;
 
@@ -148,6 +146,11 @@ export function activate(context: vscode.ExtensionContext) {
                     if (property_data.type) {
                         completion_item.detail = property_data.type;
                     }
+                    // TODO: greeeeeat, we can cleanup single line of code 
+                    /*completion_item.command = {
+                        title: "aaa",
+                        command: "",
+                    };*/
 
                     if (property_data.description) {
                         completion_item.documentation = property_data.description;
@@ -324,8 +327,24 @@ function watchFiles() {
 function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
         console.log(`Did change: ${event.document.uri}`, event);
+        // TODO:
+        // when "" or '' added you can easily tell that there is , in front comming, ezy man
+        // but rly that ezy? what if it was fine before? well here is a solution
+        // do that ONLY when you catch an error, simply repeat the process with that string assumed
+        // or maybe u wanna put it for a user but that might be too much
+        // only autocompletion should actually do that though
 
         decorateActiveEditor(event.document.uri);
+
+        if (textChangeEventTimeout) {
+            clearTimeout(textChangeEventTimeout);
+        }
+
+        // that says that we wanna parse everything (not just visibly stuff) only when the dev is waiting
+        textChangeEventTimeout = setTimeout(() => {
+            textChangeEventTimeout = null;
+            decorateActiveEditor(event.document.uri);
+        }, 200);
     });
 
     /*vscode.window.onDidChangeVisibleTextEditors(textEditors => {
@@ -346,37 +365,6 @@ function initSyntaxDecorator() {
         console.log(`Did open: ${document.uri}`);
 
         decorateActiveEditor(document.uri);
-    });
-
-    vscode.window.onDidChangeTextEditorVisibleRanges(event => {
-        // needs some delay!
-        if (event.textEditor.document.uri !== vscode.window.activeTextEditor?.document.uri) {
-            return;
-        }
-
-        if (!visibleRangesEventInterval) {
-            visibleRangesEventInterval = setInterval(() => {
-                if (visibleRanges) {
-                    scrolling_speed = event.visibleRanges[0].start.line - visibleRanges[0].start.line;
-                }
-                decorateActiveEditor(event.textEditor.document.uri);
-            }, 200);
-        }
-
-        if (visibleRangesEventTimeout) {
-            clearTimeout(visibleRangesEventTimeout);
-        }
-
-        visibleRangesEventTimeout = setTimeout(() => {
-            if (visibleRangesEventInterval) {
-                clearInterval(visibleRangesEventInterval);
-                visibleRangesEventInterval = null;
-            }
-            visibleRangesEventTimeout = null;
-
-            scrolling_speed = 0;
-            decorateActiveEditor(event.textEditor.document.uri);
-        }, 200);
     });
 }
 
@@ -422,20 +410,23 @@ function parseCodePart(code_part: any, buffer: any = {}): codeDataFull {
     const cx1 = code_part.loc.end.column;
     const cy1 = code_part.loc.end.line - 1;
     //const vx0 = visibleRange.start.character;
-    //console.log(scrolling_speed);
-    const vy0 = visibleRange.start.line - 20 + 20 * Math.sign(scrolling_speed);
+    const vy0 = visibleRange.start.line;
     //const vx1 = visibleRange.endcharacter;
-    const vy1 = visibleRange.end.line + 20 + 20 * Math.sign(scrolling_speed);
+    const vy1 = visibleRange.end.line;
 
     //cx1 >= vx0 &&//cx0 <= vx1 &&
-    if (cy0 <= vy1 && cy1 >= vy0) {
-        // code part is visible - optimisation purpose, from 30ms on 2000 lines to 4ms, worth it? kinda
-        //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
-    }
-    else {
-        //console.log("outside", code_part);
-        //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
-        return code_data_full;
+
+    // editing? show just the part we can see, eeeeezy
+    if (textChangeEventTimeout) {
+        if (cy0 <= vy1 && cy1 >= vy0) {
+            // code part is visible - optimisation purpose, from 30ms on 2000 lines to 4ms, worth it? kinda
+            //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+        }
+        else {
+            //console.log("outside", code_part);
+            //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+            return code_data_full;
+        }
     }
 
     //console.log("some_code_part: " + code_part.kind, code_part);
