@@ -63,6 +63,10 @@ const decorate_expression = vscode.window.createTextEditorDecorationType({
     backgroundColor: 'green'
 });
 
+const docorate_exclude = vscode.window.createTextEditorDecorationType({
+    backgroundColor: '#f002'
+});
+
 // replaced with php parser yay
 //const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
 //const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;
@@ -135,11 +139,11 @@ export function activate(context: vscode.ExtensionContext) {
 
         // spot function argument
         for (const code_part_data of code_data_in_current_editor) {
-            console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
+            //console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
             if (code_part_data.entry && code_part_data.entry.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= position.character && code_part_data.loc.end.column >= position.character) {
                 let entity_name = code_part_data.entry.entity.name;
 
-                console.log("omw", code_part_data, { entity_name });
+                //console.log("omw", code_part_data, { entity_name });
 
                 const entity_data = entity_definitions[entity_name];
                 //console.log({ entity_data });
@@ -848,6 +852,9 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     const document = editor.document;
 
+    const IS_JS = document.uri.path.endsWith(".js");
+    const IS_PHP = document.uri.path.endsWith(".php");
+
     /*const actualSourceCode = document.getText();
 
     const actual_php_parsed = php_parser.parseCode(actualSourceCode, {
@@ -871,6 +878,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
     let annotation_decorations: vscode.DecorationOptions[] = [];
     let entity_decorations: vscode.DecorationOptions[] = [];
     let expression_decorations: vscode.DecorationOptions[] = [];
+    let exclude_decorations: vscode.DecorationOptions[] = [];
 
     const sourceCodeArr = sourceCode.split('\n');
 
@@ -878,7 +886,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
 
-    if (document.uri.path.endsWith(".php") && visibleRanges && visibleRanges[0]) {
+    if (IS_PHP && visibleRanges && visibleRanges[0]) {
         const d0 = new Date();
 
         php_parsed = php_parser.parseCode(sourceCode);
@@ -993,33 +1001,60 @@ function decorateActiveEditor(uri: vscode.Uri) {
     code_data_in_current_editor = temp_code_data_in_current_editor;
 
     const sourceCodeArrLen = sourceCodeArr.length;
+    let exclude_start_line = null;
     for (let line_id = 0; line_id < sourceCodeArrLen; line_id++) {
         const line = sourceCodeArr[line_id];
+
         if (line_id === 0) {
-            // TODO: just php ;)
-            const match_annotation = line.match(/(<\?php \/\/.*\[.*\])/);
+            if (IS_PHP) {
+                const match_annotation = line.match(/(<\?php \/\/.*\[.*\])/);
 
-            if (match_annotation !== null) {
-                const slash_ind = line.indexOf("//");
-                const open_bracket_ind = line.indexOf("[");
-                const close_bracket_ind = line.indexOf("]");
+                if (match_annotation !== null) {
+                    const slash_ind = line.indexOf("//");
+                    const open_bracket_ind = line.indexOf("[", slash_ind);
+                    const close_bracket_ind = line.indexOf("]", open_bracket_ind);
 
-                let range = new vscode.Range(
-                    new vscode.Position(line_id, slash_ind + 2),
-                    new vscode.Position(line_id, close_bracket_ind + 1)
-                );
+                    let range = new vscode.Range(
+                        new vscode.Position(line_id, slash_ind + 2),
+                        new vscode.Position(line_id, close_bracket_ind + 1)
+                    );
 
-                const type = line.substring(slash_ind + 2, open_bracket_ind).trim();
-                const base_url = `http://lsit.pl`;
-                let link = `${base_url}${line.substring(open_bracket_ind + 1, close_bracket_ind)}`;
-                link = link.replace("{ADMIN}", "/admin/");
+                    const type = line.substring(slash_ind + 2, open_bracket_ind).trim();
+                    const base_url = `http://lsit.pl`;
+                    let link = `${base_url}${line.substring(open_bracket_ind + 1, close_bracket_ind)}`;
+                    link = link.replace("{ADMIN}", "/admin/");
 
-                const myContent = new vscode.MarkdownString(`**Open in a browser:**\n\n [${link}](${link})\n\n**Documentation**\n\n[https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU](https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU)`);
-                myContent.isTrusted = true;
+                    const myContent = new vscode.MarkdownString(`**Open in a browser:**\n\n [${link}](${link})\n\n**Documentation**\n\n[https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU](https://piep.bit.ai/docs/view/UifbMg9cXMw29jkU)`);
+                    myContent.isTrusted = true;
 
-                let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+                    let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
 
-                annotation_decorations.push(decoration);
+                    annotation_decorations.push(decoration);
+                }
+            }
+        }
+
+        if (IS_JS) {
+            const match_exclude_start = line.match(/\/\/.*exclude start/);
+            if (match_exclude_start) {
+                exclude_start_line = line_id;
+            }
+            else if (exclude_start_line !== null) {
+                const match_exclude_end = line.match(/\/\/.*exclude end/);
+
+                if (match_exclude_end) {
+                    let range = new vscode.Range(
+                        new vscode.Position(exclude_start_line, 0),
+                        new vscode.Position(line_id + 1, 0)
+                    );
+
+                    const myContent = new vscode.MarkdownString(`This part of code will be excluded by the backend compiler\n\nWhen to use it? For example for type hinting classes like PiepNode`);
+                    let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+                    exclude_decorations.push(decoration);
+
+                    exclude_start_line = null;
+                }
             }
         }
     }
@@ -1027,6 +1062,8 @@ function decorateActiveEditor(uri: vscode.Uri) {
     editor.setDecorations(decorate_entity, entity_decorations);
     editor.setDecorations(decorate_annotation, annotation_decorations);
     editor.setDecorations(decorate_expression, expression_decorations);
+    editor.setDecorations(docorate_exclude, exclude_decorations);
+
 
     console.log("Set decorations");
 }
