@@ -47,6 +47,7 @@
         "vscode-test": "^1.4.0"
     },
     "dependencies": {
+        "esprima": "^4.0.1",
         "php-parser": "^3.0.2"
     }
 }
