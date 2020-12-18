@@ -4,12 +4,7 @@ import * as vscode from "vscode";
 import * as fs from 'fs';
 import { cloneObject, deepMerge } from './util';
 import { scanFilePHP, getCompletionItemsPHP } from './php';
-
-
-
-const esprima = require('esprima');
-
-
+import { scanFileJS } from './js';
 
 const window = vscode.window;
 
@@ -379,13 +374,15 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
 
-    if (IS_JS) {
-        const result = esprima.parseScript(sourceCode);
-        console.log(result);
-    }
 
-    if (IS_PHP && visibleRanges && visibleRanges[0]) {
-        scanFilePHP(editor, sourceCode, sourceCodeArr);
+
+    if (visibleRanges && visibleRanges[0]) {
+        if (IS_PHP) {
+            scanFilePHP(editor, sourceCode, sourceCodeArr);
+        }
+        if (IS_JS) {
+            scanFileJS(editor, sourceCode, sourceCodeArr);
+        }
     }
 
     const sourceCodeArrLen = sourceCodeArr.length;
