@@ -2,7 +2,7 @@
 
 import * as vscode from "vscode";
 import * as fs from 'fs';
-import { cloneObject, deepMerge } from './util';
+import { cloneObject, deepAssign } from './util';
 import { scanFilePHP, getCompletionItemsPHP } from './php';
 import { scanFileJS } from './js';
 
@@ -22,7 +22,7 @@ interface file_data {
     entity_definition: any,
 }
 
-export const decorate_annotation = vscode.window.createTextEditorDecorationType({
+export const decorate_wo997_annotation = vscode.window.createTextEditorDecorationType({
     color: '#a3c',
     fontWeight: 'bold',
     /*fontWeight: 'bold',
@@ -52,6 +52,14 @@ const decorate_expression = vscode.window.createTextEditorDecorationType({
 
 const docorate_exclude = vscode.window.createTextEditorDecorationType({
     backgroundColor: '#f002'
+});
+
+export const decorate_annotation_type = vscode.window.createTextEditorDecorationType({
+    color: '#2566c8'
+});
+
+export const decorate_annotation_data_type = vscode.window.createTextEditorDecorationType({
+    color: '#3ac9a3'
 });
 
 // replaced with php parser yay
@@ -110,6 +118,7 @@ export function activate(context: vscode.ExtensionContext) {
     const provideCompletionItems = (document: vscode.TextDocument, position: vscode.Position) => {
         const linePrefix = document.lineAt(position).text.substr(0, position.character);
 
+        console.log("IS_PHP", IS_PHP);
         if (IS_PHP) {
             return getCompletionItemsPHP(document, position, linePrefix);
         }
@@ -166,7 +175,7 @@ function updateDefiniton(entity_name: string) {
             return;
         }
         // TODO: it's a place where you want to merge props and methods maybe
-        entity_definition = deepMerge(entity_definition, file_data.entity_definition);
+        entity_definition = deepAssign(entity_definition, file_data.entity_definition);
     });
 
     entity_definitions[entity_name] = entity_definition;
@@ -423,7 +432,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
     }
 
     //editor.setDecorations(decorate_entity, entity_decorations);
-    //editor.setDecorations(decorate_annotation, annotation_decorations);
+    //editor.setDecorations(decorate_wo997_annotation, annotation_decorations);
     //editor.setDecorations(decorate_expression, expression_decorations);
     //editor.setDecorations(docorate_exclude, exclude_decorations);
 

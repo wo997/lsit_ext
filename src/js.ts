@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { Program, Block } from 'php-parser';
-import { cloneObject, deepMerge } from './util';
-import { visibleRanges, textChangeEventTimeout, extractEntityName, getEntityInCodeObj, decorate_entity, entity_data_files, entity_definitions, filePathClean, workspace_path, decorate_annotation } from './extension';
+import { cloneObject, deepAssign } from './util';
+import { visibleRanges, textChangeEventTimeout, extractEntityName, getEntityInCodeObj, decorate_entity, entity_data_files, entity_definitions, filePathClean, workspace_path, decorate_wo997_annotation } from './extension';
 
 const esprima = require('esprima');
 
