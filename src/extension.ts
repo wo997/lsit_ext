@@ -62,6 +62,11 @@ export const decorate_annotation_data_type = vscode.window.createTextEditorDecor
     color: '#3ac9a3'
 });
 
+export const decorate_error = vscode.window.createTextEditorDecorationType({
+    /*textDecoration: "underline red",*/
+    backgroundColor: '#f003'
+});
+
 // replaced with php parser yay
 //const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
 //const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;

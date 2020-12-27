@@ -153,6 +153,8 @@ function assignScope(code_part: any, parent_code_part: any) {
 };
 
 function assignDataType(code_part: any, data_type: string, options: any = {}) {
+    //console.log("!!!!!!!!!!assigning " + data_type + " to ", code_part);
+
     code_part.data_type = data_type;
     const data_type_data = data_type_data_arr[data_type];
     if (data_type_data) {
@@ -252,13 +254,10 @@ function crawlCodePart(code_part: any) {
 
                         assignScope(item, code_part);
 
-                        console.log("1111111111111111");
                         if (item.key && item.key.kind === "string" && item.value) {
-                            console.log("2");
                             const sub_data_type_data = data_type_data.properties[item.key.value];
                             //data_type_data_arr
                             if (sub_data_type_data) {
-                                console.log("3", sub_data_type_data);
                                 assignDataType(item.value, sub_data_type_data.data_type);
                             }
                         }
@@ -305,7 +304,16 @@ function crawlCodePart(code_part: any) {
             break;
         case "number":
             {
-
+                if (!code_part.data_type) {
+                    assignDataType(code_part, "number");
+                }
+            }
+            break;
+        case "string":
+            {
+                if (!code_part.data_type) {
+                    assignDataType(code_part, "string");
+                }
             }
             break;
         case "expressionstatement":
@@ -378,6 +386,14 @@ function crawlCodePart(code_part: any) {
                     }
 
                     crawlCodePart(left);
+
+                    if (left.data_type && right.data_type && left.data_type != right.data_type) {
+                        console.error("Wrong assignment :P");
+                        temp_decorations.push({
+                            error: `Cannot assign **${right.data_type}** to **${left.data_type}**!`,
+                            loc: code_part.expression.loc
+                        });
+                    }
                 } else {
                     const expression = code_part.expression;
                     assignScope(expression, code_part);
@@ -396,12 +412,14 @@ function crawlCodePart(code_part: any) {
                     crawlCodePart(what);
 
                     if (what.data_type_data && what.data_type_data.properties) {
+                        //console.log("GIVE PROPERTIES ", what.data_type_data.properties, "TO", offset);
                         offset.possible_properties = what.data_type_data.properties;
                         temp_interesting_code_parts.push(offset);
 
                         const offset_value = offset.value;
                         const offset_property = offset.possible_properties[offset_value];
                         if (offset_property) {
+                            //console.log("give offset data type " + offset_property.data_type + ":", offset);
                             assignDataType(offset, offset_property.data_type);
                         }
                     }
@@ -410,6 +428,7 @@ function crawlCodePart(code_part: any) {
 
                     if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
                         if (offset.data_type) {
+                            //console.log("from parent data type " + offset.data_type + ":", offset);
                             assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
                         }
                     }
@@ -428,24 +447,9 @@ function crawlCodePart(code_part: any) {
             break;
 
 
-        /*case "function":
-            clearBufferFromVars();
-            code_data_full = parseFunction(code_data_full);
-            break;
+        /*
         case "echo":
             code_data_full = parseExpressions(code_data_full);
-            break;
-        case "array":
-            code_data_full = parseArray(code_data_full);
-            break;
-        case "entry":
-            code_data_full = parseEntry(code_data_full);
-            break;
-        case "call":
-            code_data_full = parseCall(code_data_full);
-            break;
-        case "block":
-            code_data_full = parseBlock(code_data_full);
             break;
         case "class":
             code_data_full = parseClass(code_data_full);
@@ -459,13 +463,10 @@ function crawlCodePart(code_part: any) {
             break;*/
     }
 
+
     if (code_part.reference) {
-        if (code_part.reference.data_type != code_part.data_type) {
-            console.error("Wrong assignment :P");
-        }
-        const data_type = code_part.data_type;
-        if (data_type) {
-            assignDataType(code_part.reference, data_type);
+        if (!code_part.reference.data_type) {
+            assignDataType(code_part.reference, code_part.data_type);
         }
     }
 
@@ -488,6 +489,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
     let entity_decorations: vscode.DecorationOptions[] = [];
     let annotation_type_decorations: vscode.DecorationOptions[] = [];
     let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
+    let error_decorations: vscode.DecorationOptions[] = [];
 
     const d0 = new Date();
     const php_parsed = php_parser.parseCode(sourceCode);
@@ -528,8 +530,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             const data_type_data = code_decoration.data_type_data;
 
             if (data_type) {
-                console.log(data_type);
-                description += `**Wo997 type:**\n\n${data_type}\n\n`;
+                description += `**Wo997 Type:**\n\n${data_type}\n\n`;
             }
             if (data_type_data) {
                 description += JSON.stringify(data_type_data) + "\n\n";
@@ -546,7 +547,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             const annotation = code_decoration.annotation;
 
             //if (annotation == "type") {
-            description += `**Wo997 annotation:**\n\n${annotation}\n\n`;
+            description += `**Wo997 Annotation:**\n\n${annotation}\n\n`;
             //}
 
             const myContent = new vscode.MarkdownString(description);
@@ -560,7 +561,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             const annotation_data_type = code_decoration.annotation_data_type;
 
             //if (data_type == "type") {
-            description += `**Wo997 annotation data type:**\n\n${annotation_data_type}\n\n`;
+            description += `**Wo997 Annotation data type:**\n\n${annotation_data_type}\n\n`;
             //}
 
             const myContent = new vscode.MarkdownString(description);
@@ -569,6 +570,20 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
 
             annotation_data_type_decorations.push(decoration);
+        }
+        else if (code_decoration.error) {
+            const error = code_decoration.error;
+
+            //if (data_type == "type") {
+            description += `**Wo997 Error:**\n\n${error}\n\n`;
+            //}
+
+            const myContent = new vscode.MarkdownString(description);
+            myContent.isTrusted = true;
+
+            let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
+
+            error_decorations.push(decoration);
         }
 
 
@@ -640,6 +655,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
     editor.setDecorations(ext.decorate_entity, entity_decorations);
     editor.setDecorations(ext.decorate_annotation_type, annotation_type_decorations);
     editor.setDecorations(ext.decorate_annotation_data_type, annotation_data_type_decorations);
+    editor.setDecorations(ext.decorate_error, error_decorations);
 
     let wo997_annotation_decorations: vscode.DecorationOptions[] = [];
 
