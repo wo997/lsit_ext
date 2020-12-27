@@ -176,201 +176,242 @@ function crawlCodePart(code_part: any) {
 
     switch (code_part.kind) {
         case "program":
-            //
-            createScope(code_part);
+            {
+                createScope(code_part);
 
-            for (const child of code_part.children) {
-                //console.log("my child: ", child);
+                for (const child of code_part.children) {
+                    //console.log("my child: ", child);
 
-                assignScope(child, code_part);
-                crawlCodePart(child);
+                    assignScope(child, code_part);
+                    crawlCodePart(child);
+                }
             }
             break;
         case "assign":
-            //console.log("my scope: ", code_part.scope);
+            {
+                //console.log("my scope: ", code_part.scope);
+            }
             break;
         case "if":
-            assignScope(code_part.test, code_part);
-            assignScope(code_part.body, code_part);
-            crawlCodePart(code_part.test);
-            crawlCodePart(code_part.body);
+            {
+                assignScope(code_part.test, code_part);
+                assignScope(code_part.body, code_part);
+                crawlCodePart(code_part.test);
+                crawlCodePart(code_part.body);
+            }
             break;
         case "call":
-            assignScope(code_part.what, code_part);
-            //crawlCodePart(code_part.what);
+            {
+                assignScope(code_part.what, code_part);
+                //crawlCodePart(code_part.what);
 
-            let args_data_types: any = [];
-            if (code_part.what.name && code_part.what.name === "var_dump") {
-                args_data_types = ["Cat", "number"];
-            }
-
-            console.log(code_part.what.name, args_data_types, "XXXXXX");
-
-            let argument_index = -1;
-            for (const arg of code_part.arguments) {
-                argument_index++;
-
-                assignScope(arg, code_part);
-
-                if (arg.kind === "array") {
-                    const data_type = args_data_types[argument_index];
-                    const data_type_data = data_type_data_arr[data_type];
-                    //console.log("data_type", data_type, data_type_data);
-                    if (data_type_data) {
-                        assignDataType(arg, data_type);
-
-                        for (const item of arg.items) {
-                            const fake_key = item.key ? item.key : item.value;
-                            if (fake_key.kind == "string") {
-                                fake_key.possible_properties = data_type_data.properties;
-                                temp_interesting_code_parts.push(fake_key);
-                            }
-                        }
-                    }
-                    /*const item = child.items[0];
-
-                    const data_type = args_data_types[argument_index];
-                    const data_type_data = data_type_data_arr[data_type];
-
-                    console.log("data_type", data_type, data_type_data, "item:::::", item);
-
-                    if (data_type_data) {
-                        item.possible_properties = data_type_data.properties;
-                        temp_interesting_code_parts.push(item);
-                    }*/
+                let args_data_types: any = [];
+                if (code_part.what.name && code_part.what.name === "var_dump") {
+                    args_data_types = ["Cat", "number"];
                 }
 
-                crawlCodePart(arg);
-            }
+                console.log(code_part.what.name, args_data_types, "XXXXXX");
 
+                let argument_index = -1;
+                for (const arg of code_part.arguments) {
+                    argument_index++;
+
+                    assignScope(arg, code_part);
+
+                    const data_type = args_data_types[argument_index];
+                    const data_type_data = data_type_data_arr[data_type];
+                    if (data_type_data) {
+                        assignDataType(arg, data_type);
+                    }
+
+                    crawlCodePart(arg);
+                }
+            }
             break;
         case "block":
-            for (const child of code_part.children) {
-                assignScope(child, code_part);
-                crawlCodePart(child);
+            {
+                for (const child of code_part.children) {
+                    assignScope(child, code_part);
+                    crawlCodePart(child);
+                }
+            }
+            break;
+        case "array":
+            {
+                const data_type = code_part.data_type;
+                const data_type_data = code_part.data_type_data;
+                if (data_type_data) {
+                    assignDataType(code_part, data_type);
+
+                    for (const item of code_part.items) {
+                        const fake_key = item.key ? item.key : item.value;
+                        if (fake_key.kind == "string") {
+                            fake_key.possible_properties = data_type_data.properties;
+                            temp_interesting_code_parts.push(fake_key);
+                        }
+
+                        assignScope(item, code_part);
+
+                        console.log("1111111111111111");
+                        if (item.key && item.key.kind === "string" && item.value) {
+                            console.log("2");
+                            const sub_data_type_data = data_type_data.properties[item.key.value];
+                            //data_type_data_arr
+                            if (sub_data_type_data) {
+                                console.log("3", sub_data_type_data);
+                                assignDataType(item.value, sub_data_type_data.data_type);
+                            }
+                        }
+
+                        crawlCodePart(item);
+                    }
+                }
+            }
+            break;
+        case "entry":
+            {
+                const key = code_part.key;
+                const value = code_part.value;
+
+                assignScope(value, code_part)
+                crawlCodePart(value);
+
+                if (key) {
+                    assignScope(key, code_part)
+                    crawlCodePart(key);
+                }
             }
             break;
         case "variable":
-            let data_type = code_part.data_type;
-            /*console.log("VARariables", code_part.scope.variables,
-                "data_type", data_type);*/
-            if (data_type) {
-                if (code_part.name) {
-                    //console.log("data_type", data_type);
-                    code_part.scope.variables[code_part.name] = data_type;
-                    //console.log("variables", code_part.scope.variables);
-                }
-            }
-            else {
-                data_type = code_part.scope.variables[code_part.name];
-                //console.log("data_type", data_type);
+            {
+                let data_type = code_part.data_type;
+                /*console.log("VARariables", code_part.scope.variables,
+                    "data_type", data_type);*/
                 if (data_type) {
-                    assignDataType(code_part, data_type);
+                    if (code_part.name) {
+                        //console.log("data_type", data_type);
+                        code_part.scope.variables[code_part.name] = data_type;
+                        //console.log("variables", code_part.scope.variables);
+                    }
+                }
+                else {
+                    data_type = code_part.scope.variables[code_part.name];
+                    //console.log("data_type", data_type);
+                    if (data_type) {
+                        assignDataType(code_part, data_type);
+                    }
                 }
             }
             break;
         case "number":
+            {
+
+            }
             break;
         case "expressionstatement":
-            const comments = code_part.leadingComments;
+            {
+                const comments = code_part.leadingComments;
 
-            let annotation_data_type = null;
+                let annotation_data_type = null;
 
-            if (comments && comments.length > 0) {
-                const last_comment = comments[comments.length - 1];
-                if (last_comment.kind === "commentblock") {
-                    if (last_comment.value.match(/@type.*{.*}/)) {
-                        const match_annotation_type = last_comment.value.match(/@\w*/);
-                        if (match_annotation_type) {
-                            const annotation_type = match_annotation_type[0];
+                if (comments && comments.length > 0) {
+                    const last_comment = comments[comments.length - 1];
+                    if (last_comment.kind === "commentblock") {
+                        if (last_comment.value.match(/@type.*{.*}/)) {
+                            const match_annotation_type = last_comment.value.match(/@\w*/);
+                            if (match_annotation_type) {
+                                const annotation_type = match_annotation_type[0];
 
-                            const start_column = last_comment.loc.start.column + match_annotation_type.index;
+                                const start_column = last_comment.loc.start.column + match_annotation_type.index;
 
-                            temp_decorations.push({
-                                annotation: annotation_type,
-                                loc: {
-                                    start: {
-                                        line: last_comment.loc.start.line,
-                                        column: start_column,
+                                temp_decorations.push({
+                                    annotation: annotation_type,
+                                    loc: {
+                                        start: {
+                                            line: last_comment.loc.start.line,
+                                            column: start_column,
+                                        },
+                                        end: {
+                                            line: last_comment.loc.start.line,
+                                            column: start_column + annotation_type.length,
+                                        }
                                     },
-                                    end: {
-                                        line: last_comment.loc.start.line,
-                                        column: start_column + annotation_type.length,
-                                    }
-                                },
-                            });
-                        }
+                                });
+                            }
 
-                        const match_annotation_data_type = last_comment.value.match(/{.*}/);
-                        if (match_annotation_data_type) {
-                            const data_type = match_annotation_data_type[0];
-                            annotation_data_type = data_type.substring(1, data_type.length - 1);
+                            const match_annotation_data_type = last_comment.value.match(/{.*}/);
+                            if (match_annotation_data_type) {
+                                const data_type = match_annotation_data_type[0];
+                                annotation_data_type = data_type.substring(1, data_type.length - 1);
 
-                            const start_column = last_comment.loc.start.column + match_annotation_data_type.index;
+                                const start_column = last_comment.loc.start.column + match_annotation_data_type.index;
 
-                            temp_decorations.push({
-                                annotation_data_type: annotation_data_type,
-                                loc: {
-                                    start: {
-                                        line: last_comment.loc.start.line,
-                                        column: start_column,
+                                temp_decorations.push({
+                                    annotation_data_type: annotation_data_type,
+                                    loc: {
+                                        start: {
+                                            line: last_comment.loc.start.line,
+                                            column: start_column,
+                                        },
+                                        end: {
+                                            line: last_comment.loc.start.line,
+                                            column: start_column + data_type.length,
+                                        }
                                     },
-                                    end: {
-                                        line: last_comment.loc.start.line,
-                                        column: start_column + data_type.length,
-                                    }
-                                },
-                            });
+                                });
+                            }
                         }
                     }
                 }
-            }
 
-            const left = code_part.expression.left;
-            const right = code_part.expression.right;
-            if (left && right) {
-                assignScope(left, code_part);
-                assignScope(right, code_part);
-                right.reference = left;
-                crawlCodePart(right);
+                const left = code_part.expression.left;
+                const right = code_part.expression.right;
+                if (left && right) {
+                    assignScope(left, code_part);
+                    assignScope(right, code_part);
+                    right.reference = left;
+                    crawlCodePart(right);
 
-                if (annotation_data_type) {
-                    //console.log(left, annotation_data_type);
-                    assignDataType(left, annotation_data_type);
+                    if (annotation_data_type) {
+                        //console.log(left, annotation_data_type);
+                        assignDataType(left, annotation_data_type);
+                    }
+
+                    crawlCodePart(left);
+                } else {
+                    const expression = code_part.expression;
+                    assignScope(expression, code_part);
+                    crawlCodePart(expression);
                 }
-
-                crawlCodePart(left);
-            } else {
-                const expression = code_part.expression;
-                assignScope(expression, code_part);
-                crawlCodePart(expression);
             }
             break;
         case "offsetlookup":
-            const what = code_part.what;
-            const offset = code_part.offset;
-            if (what && offset) {
-                assignScope(what, code_part);
-                assignScope(offset, code_part);
+            {
+                const what = code_part.what;
+                const offset = code_part.offset;
+                if (what && offset) {
+                    assignScope(what, code_part);
+                    assignScope(offset, code_part);
 
-                crawlCodePart(what);
+                    crawlCodePart(what);
 
-                if (what.data_type_data && what.data_type_data.properties) {
-                    offset.possible_properties = what.data_type_data.properties;
-                    temp_interesting_code_parts.push(offset);
+                    if (what.data_type_data && what.data_type_data.properties) {
+                        offset.possible_properties = what.data_type_data.properties;
+                        temp_interesting_code_parts.push(offset);
 
-                    const offset_value = offset.value;
-                    const offset_property = offset.possible_properties[offset_value];
-                    if (offset_property) {
-                        assignDataType(offset, offset_property.data_type);
+                        const offset_value = offset.value;
+                        const offset_property = offset.possible_properties[offset_value];
+                        if (offset_property) {
+                            assignDataType(offset, offset_property.data_type);
+                        }
                     }
-                }
 
-                crawlCodePart(offset);
+                    crawlCodePart(offset);
 
-                if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
-                    if (offset.data_type) {
-                        assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                    if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
+                        if (offset.data_type) {
+                            assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                        }
                     }
                 }
             }
