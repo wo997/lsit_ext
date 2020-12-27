@@ -284,16 +284,18 @@ function crawlCodePart(code_part: any) {
                         if (match_annotation_type) {
                             const annotation_type = match_annotation_type[0];
 
+                            const start_column = last_comment.loc.start.column + match_annotation_type.index;
+
                             temp_decorations.push({
                                 annotation: annotation_type,
                                 loc: {
                                     start: {
                                         line: last_comment.loc.start.line,
-                                        column: match_annotation_type.index,
+                                        column: start_column,
                                     },
                                     end: {
-                                        line: last_comment.loc.end.line,
-                                        column: match_annotation_type.index + annotation_type.length,
+                                        line: last_comment.loc.start.line,
+                                        column: start_column + annotation_type.length,
                                     }
                                 },
                             });
@@ -304,16 +306,18 @@ function crawlCodePart(code_part: any) {
                             const data_type = match_annotation_data_type[0];
                             annotation_data_type = data_type.substring(1, data_type.length - 1);
 
+                            const start_column = last_comment.loc.start.column + match_annotation_data_type.index;
+
                             temp_decorations.push({
                                 annotation_data_type: annotation_data_type,
                                 loc: {
                                     start: {
                                         line: last_comment.loc.start.line,
-                                        column: match_annotation_data_type.index,
+                                        column: start_column,
                                     },
                                     end: {
-                                        line: last_comment.loc.end.line,
-                                        column: match_annotation_data_type.index + data_type.length,
+                                        line: last_comment.loc.start.line,
+                                        column: start_column + data_type.length,
                                     }
                                 },
                             });
@@ -372,7 +376,14 @@ function crawlCodePart(code_part: any) {
             }
             break;
         case "function":
+            {
+                createScope(code_part);
 
+                const args = code_part.arguments;
+                const body = code_part.body;
+                assignScope(body, code_part);
+                crawlCodePart(body);
+            }
             break;
 
 
