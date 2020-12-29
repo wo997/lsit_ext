@@ -196,10 +196,12 @@ function crawlCodePart(code_part: any) {
             break;
         case "if":
             {
-                assignScope(code_part.test, code_part);
-                assignScope(code_part.body, code_part);
-                crawlCodePart(code_part.test);
-                crawlCodePart(code_part.body);
+                const test = code_part.test;
+                const body = code_part.body;
+                assignScope(test, code_part);
+                assignScope(body, code_part);
+                crawlCodePart(test);
+                crawlCodePart(body);
             }
             break;
         case "call":
@@ -314,6 +316,26 @@ function crawlCodePart(code_part: any) {
                 if (!code_part.data_type) {
                     assignDataType(code_part, "string");
                 }
+            }
+            break;
+        case "while":
+            {
+                const body = code_part.body;
+                const test = code_part.test;
+                assignScope(body, code_part);
+                assignScope(test, code_part);
+                crawlCodePart(body);
+                crawlCodePart(test);
+            }
+            break;
+        case "bin":
+            {
+                const left = code_part.left;
+                const right = code_part.right;
+                assignScope(left, code_part);
+                assignScope(right, code_part);
+                crawlCodePart(left);
+                crawlCodePart(right);
             }
             break;
         case "expressionstatement":
