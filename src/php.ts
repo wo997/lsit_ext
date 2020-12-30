@@ -39,6 +39,8 @@ export function getCompletionItemsPHP(document: vscode.TextDocument, position: v
     for (const code_part of interesting_code_parts) {
         //console.log("test", code_part.entry, "p1", code_part.loc.start, "p2", position, code_part.loc.start.column <= position.character, code_part.loc.end.column >= position.character);
         //console.log("CIPSADASDASDFASDFASDFASDFasdf", code_part.kind, "&&", code_part.possible_properties, "&&", code_part.loc.start.line - 1, "===", position.line, "&&", code_part.loc.start.column, "<=", position.character, "&&", code_part.loc.end.column, ">=", position.character);
+
+        // what's funny, we did the exact same check before that item was even added ;)
         if (code_part.kind === "string" && code_part.possible_properties && code_part.loc.start.line - 1 === position.line && code_part.loc.start.column <= position.character && code_part.loc.end.column >= position.character) {
             //console.log("0000000000000000000000000000", code_part.possible_properties);
             //return;
@@ -145,11 +147,11 @@ function createScope(code_part: any) {
     };
 };
 
-function assignScope(code_part: any, parent_code_part: any) {
-    code_part.scope = parent_code_part.scope;
-    code_part.parent_code_part = parent_code_part;
-    code_part.level = parent_code_part.level + 1;
-    //code_part.buffer = cloneObject(parent_code_part.buffer);
+function assignScope(child_code_part: any, code_part: any) {
+    child_code_part.scope = code_part.scope;
+    child_code_part.parent_code_part = code_part;
+    child_code_part.level = code_part.level + 1;
+    //child_code_part.buffer = cloneObject(code_part.buffer);
 };
 
 function assignDataType(code_part: any, data_type: string, options: any = {}) {
@@ -165,6 +167,20 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
     code_part.hoverable = hoverable !== undefined ? hoverable : true;
 }
 
+function addInterestingCodePart(code_part: any) {
+    if (isCodePartVisible(code_part)) {
+        temp_interesting_code_parts.push(code_part);
+    }
+}
+
+function isCodePartVisible(code_part: any) {
+    const selection = vscode.window.activeTextEditor?.selection;
+    return selection
+        && code_part.loc.start.line - 1 === selection.start.line
+        && code_part.loc.start.column <= selection.start.character
+        && code_part.loc.end.column >= selection.start.character;
+}
+
 function crawlCodePart(code_part: any) {
     /*if (!code_part.buffer) {
         code_part.buffer = {};
@@ -173,8 +189,38 @@ function crawlCodePart(code_part: any) {
         code_part.level = 0;
     }
 
+    if (!ext.visibleRanges) {
+        return;
+    }
+    const visibleRange = ext.visibleRanges[0];
+
+    if (visibleRange.start === null || visibleRange.end === null) {
+        return;
+    }
+
+    // editing? show just the part we can see, eeeeezy
+    if (ext.textChangeEventTimeout) {
+        //const cx0 = code_part.loc.start.column;
+        const cy0 = code_part.loc.start.line - 1;
+        //const cx1 = code_part.loc.end.column;
+        const cy1 = code_part.loc.end.line - 1;
+        //const vx0 = visibleRange.start.character;
+        const vy0 = visibleRange.start.line;
+        //const vx1 = visibleRange.endcharacter;
+        const vy1 = visibleRange.end.line;
+
+        if (cy0 <= vy1 && cy1 >= vy0) {
+            //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+        }
+        else {
+            //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+            return;
+        }
+    }
+
+
     //console.log("---" + code_part.kind, code_part, code_part.buffer);
-    console.log("--".repeat(code_part.level) + code_part.kind, code_part);
+    //console.log("--".repeat(code_part.level) + code_part.kind, code_part);
 
     switch (code_part.kind) {
         case "program":
@@ -214,7 +260,7 @@ function crawlCodePart(code_part: any) {
                     args_data_types = ["Cat", "number"];
                 }
 
-                console.log(code_part.what.name, args_data_types, "XXXXXX");
+                //console.log(code_part.what.name, args_data_types, "XXXXXX");
 
                 let argument_index = -1;
                 for (const arg of code_part.arguments) {
@@ -251,7 +297,8 @@ function crawlCodePart(code_part: any) {
                         const fake_key = item.key ? item.key : item.value;
                         if (fake_key.kind == "string") {
                             fake_key.possible_properties = data_type_data.properties;
-                            temp_interesting_code_parts.push(fake_key);
+
+                            addInterestingCodePart(fake_key);
                         }
 
                         assignScope(item, code_part);
@@ -336,6 +383,15 @@ function crawlCodePart(code_part: any) {
                 assignScope(right, code_part);
                 crawlCodePart(left);
                 crawlCodePart(right);
+            }
+            break;
+        case "echo":
+            {
+                const expressions = code_part.expressions;
+                for (const expression of expressions) {
+                    assignScope(expression, code_part);
+                    crawlCodePart(expression);
+                }
             }
             break;
         case "expressionstatement":
@@ -436,7 +492,8 @@ function crawlCodePart(code_part: any) {
                     if (what.data_type_data && what.data_type_data.properties) {
                         //console.log("GIVE PROPERTIES ", what.data_type_data.properties, "TO", offset);
                         offset.possible_properties = what.data_type_data.properties;
-                        temp_interesting_code_parts.push(offset);
+
+                        addInterestingCodePart(offset);
 
                         const offset_value = offset.value;
                         const offset_property = offset.possible_properties[offset_value];
@@ -461,28 +518,34 @@ function crawlCodePart(code_part: any) {
             {
                 createScope(code_part);
 
-                const args = code_part.arguments;
+                //const args = code_part.arguments;
                 const body = code_part.body;
                 assignScope(body, code_part);
                 crawlCodePart(body);
             }
             break;
-
-
-        /*
-        case "echo":
-            code_data_full = parseExpressions(code_data_full);
-            break;
         case "class":
-            code_data_full = parseClass(code_data_full);
+            {
+                createScope(code_part);
+
+                const body = code_part.body;
+                for (const body_code_part of body) {
+                    assignScope(body_code_part, code_part);
+                    crawlCodePart(body_code_part);
+                }
+            }
             break;
         case "method":
-            clearBufferFromVars();
-            code_data_full = parseMethod(code_data_full);
+            {
+                // act kinda like a function 
+                createScope(code_part);
+
+                //const args = code_part.arguments;
+                const body = code_part.body;
+                assignScope(body, code_part);
+                crawlCodePart(body);
+            }
             break;
-        default:
-            console.error("wrong code part kind");
-            break;*/
     }
 
 
@@ -499,12 +562,6 @@ function crawlCodePart(code_part: any) {
             loc: code_part.loc,
         });
     }
-
-    // HEY MAYBE U BETTER ADD IT IN HERE ONLY IF THE CURSOR IS INSIDE, WAY MORE EFFICIENT
-    /*console.log("penis" + " " + code_part.kind);
-    if (["entry"].includes(code_part.kind)) {
-        temp_interesting_code_parts.push(code_part);
-    }*/
 }
 
 export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourceCodeArr: string[]) {
@@ -611,9 +668,9 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
 
         /*if (code_part_data.entity) {
             const entity_name = code_part_data.entity.name;
-
+ 
             //code_part_data.entity.suggestions
-
+ 
             // reference_files could also be semi cached once we find something, totally optional
             // OR EVEN BETTER you can repeat the process for repeating entities or go for a singleton style
             // butt... I don't think we will even need them lol
@@ -623,31 +680,31 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
                 return e[0];
             });
             const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
-
+ 
             let definition_pretty_string = "";
             const entity_definition = entity_definitions[entity_name];
             const entity_properties = Object.keys(entity_definition.properties);
             if (entity_properties.length > 0) {
                 definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
             }
-
+ 
             const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
             myContent.isTrusted = true;
-
+ 
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
-
+ 
             entity_decorations.push(decoration);
         }
-
+ 
         if (code_part_data.entry) {
             const prop_name = code_part_data.entry.text;
-
+ 
             const entity_name = code_part_data.entry.entity.name;
             const entity_definition = entity_definitions[code_part_data.entry.entity.name];
             if (!entity_definition || !entity_definition.properties || !Object.keys(entity_definition.properties).includes(prop_name)) {
                 continue;
             }
-
+ 
             let description = "";
             const property_obj: any = Object.entries(entity_definition.properties).find(([name, props]) => {
                 return name === prop_name;
@@ -663,12 +720,12 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
                 description += `\n\n**Instance of:**\n\n${entity_name}`;
                 description += `\n\n**Property name:**\n\n${prop_name}`;
             }
-
+ 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
-
+ 
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
-
+ 
             // that's kinda fake, it is actually an entry decoration but I use it as a style
             entity_decorations.push(decoration);
         }*/
