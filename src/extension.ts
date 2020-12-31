@@ -55,7 +55,7 @@ const docorate_exclude = vscode.window.createTextEditorDecorationType({
 });
 
 export const decorate_annotation_type = vscode.window.createTextEditorDecorationType({
-    color: '#2566c8'
+    color: '#5897d1'
 });
 
 export const decorate_annotation_data_type = vscode.window.createTextEditorDecorationType({
@@ -66,6 +66,19 @@ export const decorate_error = vscode.window.createTextEditorDecorationType({
     /*textDecoration: "underline red",*/
     backgroundColor: '#f003'
 });
+
+export const decorate_typedef_property_name = vscode.window.createTextEditorDecorationType({
+    color: '#999'
+});
+
+export const decorate_typedef_data_type = vscode.window.createTextEditorDecorationType({
+    color: '#ccc'
+});
+
+export const decorate_curly_braces = vscode.window.createTextEditorDecorationType({
+    color: '#ccc'
+});
+
 
 // replaced with php parser yay
 //const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
