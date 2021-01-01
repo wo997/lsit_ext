@@ -16,3 +16,7 @@ export function cloneObject(obj: any, src = null) {
 
     return obj_b;
 }
+
+export function probablyJSON(str: string) {
+    return !!str.match(/(\{|\[).*(\}|\])/);
+}

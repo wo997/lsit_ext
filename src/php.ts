@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
-import { Program, Block } from 'php-parser';
-import { cloneObject, deepAssign } from './util';
+import * as util from './util';
 import * as ext from './extension';
-
-
+import * as sql from './sql';
 
 const engine = require('php-parser');
 // initialize a new parser instance
@@ -154,13 +152,23 @@ function assignScope(child_code_part: any, code_part: any) {
     //child_code_part.buffer = cloneObject(code_part.buffer);
 };
 
+
+
 function assignDataType(code_part: any, data_type: string, options: any = {}) {
+    if (!code_part || !data_type) {
+        return;
+    }
     //console.log("!!!!!!!!!!assigning " + data_type + " to ", code_part);
 
     code_part.data_type = data_type;
-    const data_type_data = data_type_data_arr[data_type];
-    if (data_type_data) {
-        code_part.data_type_data = data_type_data;
+
+    if (util.probablyJSON(data_type)) {
+        code_part.data_type_data = JSON.parse(data_type);
+    } else {
+        const data_type_data = data_type_data_arr[data_type];
+        if (data_type_data) {
+            code_part.data_type_data = data_type_data;
+        }
     }
 
     const hoverable = options.hoverable;
@@ -179,6 +187,151 @@ function isCodePartVisible(code_part: any) {
         && code_part.loc.start.line - 1 === selection.start.line
         && code_part.loc.start.column <= selection.start.character
         && code_part.loc.end.column >= selection.start.character;
+}
+
+function crawlCodePartComments(comments: any) {
+    for (const comment of comments) {
+        if (comment.kind === "commentblock") {
+            let line_count = -1;
+            let current_typedef = null;
+            for (const line of comment.value.split("\n")) {
+                line_count++;
+                const actual_left = line_count === 0 ? comment.loc.start.column : 0;
+                const actual_line = comment.loc.start.line + line_count;
+
+                if (line.match(/@typedef .*{/m,)) {
+                    const match_annotation_type = line.match(/@\w*/);
+
+                    if (match_annotation_type) {
+                        const annotation_type = match_annotation_type[0];
+
+                        const start_column = actual_left + match_annotation_type.index;
+
+                        temp_decorations.push({
+                            annotation: annotation_type,
+                            loc: {
+                                start: {
+                                    line: actual_line,
+                                    column: start_column,
+                                },
+                                end: {
+                                    line: actual_line,
+                                    column: start_column + annotation_type.length,
+                                }
+                            },
+                        });
+                    }
+
+                    const match_typedef = line.match(/(?<=@typedef )\w*(?=.*{)/);
+                    if (match_typedef) {
+                        const typedef = match_typedef[0];
+
+                        current_typedef = typedef;
+
+                        const start_column = actual_left + match_typedef.index;
+
+                        temp_decorations.push({
+                            annotation_data_type: typedef,
+                            loc: {
+                                start: {
+                                    line: actual_line,
+                                    column: start_column,
+                                },
+                                end: {
+                                    line: actual_line,
+                                    column: start_column + typedef.length,
+                                }
+                            },
+                        });
+                    }
+
+                    const match_start = line.match(/{/);
+                    if (match_start) {
+                        const start_column = actual_left + match_start.index;
+
+                        temp_decorations.push({
+                            curly_brace: true,
+                            loc: {
+                                start: {
+                                    line: actual_line,
+                                    column: start_column,
+                                },
+                                end: {
+                                    line: actual_line,
+                                    column: start_column + match_start[0].length,
+                                }
+                            },
+                        });
+                    }
+                }
+
+                if (current_typedef) {
+                    const match_end = line.match(/}/);
+                    if (match_end) {
+                        current_typedef = null;
+
+                        const start_column = actual_left + match_end.index;
+
+                        temp_decorations.push({
+                            curly_brace: true,
+                            loc: {
+                                start: {
+                                    line: actual_line,
+                                    column: start_column,
+                                },
+                                end: {
+                                    line: actual_line,
+                                    column: start_column + match_end[0].length,
+                                }
+                            },
+                        });
+                    } else {
+                        const match_property = line.match(/\w*: ?\w*/);
+                        //console.log(line, match_property);
+                        if (match_property) {
+                            const [prop_name_full, data_type_full] = match_property[0].split(":");
+
+                            const start_column = actual_left + match_property.index;
+
+                            const prop_name = prop_name_full.trim();
+                            const data_type = data_type_full.trim();
+
+                            console.log(current_typedef, prop_name, data_type)
+                            temp_decorations.push({
+                                typedef_property_name: prop_name,
+                                loc: {
+                                    start: {
+                                        line: actual_line,
+                                        column: start_column,
+                                    },
+                                    end: {
+                                        line: actual_line,
+                                        column: start_column + prop_name.length,
+                                    }
+                                },
+                            });
+
+                            const start_column_data_type = start_column + prop_name.length + 1 + data_type_full.indexOf(data_type);
+
+                            temp_decorations.push({
+                                typedef_data_type: data_type,
+                                loc: {
+                                    start: {
+                                        line: actual_line,
+                                        column: start_column_data_type,
+                                    },
+                                    end: {
+                                        line: actual_line,
+                                        column: start_column_data_type + data_type.length,
+                                    }
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 function crawlCodePart(code_part: any) {
@@ -219,6 +372,11 @@ function crawlCodePart(code_part: any) {
     }
 
 
+    const comments = code_part.leadingComments;
+    if (comments) {
+        crawlCodePartComments(comments);
+    }
+
     //console.log("---" + code_part.kind, code_part, code_part.buffer);
     //console.log("--".repeat(code_part.level) + code_part.kind, code_part);
 
@@ -256,7 +414,7 @@ function crawlCodePart(code_part: any) {
                 //crawlCodePart(code_part.what);
 
                 let args_data_types: any = [];
-                if (code_part.what.name && code_part.what.name === "var_dump") {
+                if (code_part.what.name === "var_dump") {
                     args_data_types = ["Cat", "number"];
                 }
 
@@ -275,6 +433,21 @@ function crawlCodePart(code_part: any) {
                     }
 
                     crawlCodePart(arg);
+
+                    if (code_part.what.name === "fetchRow" && argument_index === 0 && arg.kind === "string") {
+                        const columns = sql.getSqlColumns(arg.value);
+                        if (columns) {
+                            const properties: any = {};
+                            for (const column of columns) {
+                                properties[column] = {
+                                    description: "Defined in SQL query"
+                                };
+                            }
+                            assignDataType(code_part, JSON.stringify({
+                                properties: properties
+                            }));
+                        }
+                    }
                 }
             }
             break;
@@ -401,149 +574,6 @@ function crawlCodePart(code_part: any) {
                 let annotation_data_type = null;
 
                 if (comments && comments.length > 0) {
-                    for (const comment of comments) {
-                        if (comment.kind === "commentblock") {
-                            let line_count = -1;
-                            let current_typedef = null;
-                            for (const line of comment.value.split("\n")) {
-                                line_count++;
-                                const actual_left = line_count === 0 ? comment.loc.start.column : 0;
-                                const actual_line = comment.loc.start.line + line_count;
-
-                                if (line.match(/@typedef .*{/m,)) {
-                                    const match_annotation_type = line.match(/@\w*/);
-
-                                    if (match_annotation_type) {
-                                        const annotation_type = match_annotation_type[0];
-
-                                        const start_column = actual_left + match_annotation_type.index;
-
-                                        temp_decorations.push({
-                                            annotation: annotation_type,
-                                            loc: {
-                                                start: {
-                                                    line: actual_line,
-                                                    column: start_column,
-                                                },
-                                                end: {
-                                                    line: actual_line,
-                                                    column: start_column + annotation_type.length,
-                                                }
-                                            },
-                                        });
-                                    }
-
-                                    const match_typedef = line.match(/(?<=@typedef )\w*(?=.*{)/);
-                                    if (match_typedef) {
-                                        const typedef = match_typedef[0];
-
-                                        current_typedef = typedef;
-
-                                        const start_column = actual_left + match_typedef.index;
-
-                                        temp_decorations.push({
-                                            annotation_data_type: typedef,
-                                            loc: {
-                                                start: {
-                                                    line: actual_line,
-                                                    column: start_column,
-                                                },
-                                                end: {
-                                                    line: actual_line,
-                                                    column: start_column + typedef.length,
-                                                }
-                                            },
-                                        });
-                                    }
-
-                                    const match_start = line.match(/{/);
-                                    if (match_start) {
-                                        const start_column = actual_left + match_start.index;
-
-                                        temp_decorations.push({
-                                            curly_brace: true,
-                                            loc: {
-                                                start: {
-                                                    line: actual_line,
-                                                    column: start_column,
-                                                },
-                                                end: {
-                                                    line: actual_line,
-                                                    column: start_column + match_start[0].length,
-                                                }
-                                            },
-                                        });
-                                    }
-                                }
-
-                                if (current_typedef) {
-                                    const match_end = line.match(/}/);
-                                    if (match_end) {
-                                        current_typedef = null;
-
-                                        const start_column = actual_left + match_end.index;
-
-                                        temp_decorations.push({
-                                            curly_brace: true,
-                                            loc: {
-                                                start: {
-                                                    line: actual_line,
-                                                    column: start_column,
-                                                },
-                                                end: {
-                                                    line: actual_line,
-                                                    column: start_column + match_end[0].length,
-                                                }
-                                            },
-                                        });
-                                    } else {
-                                        const match_property = line.match(/\w*: ?\w*/);
-                                        //console.log(line, match_property);
-                                        if (match_property) {
-                                            const [prop_name_full, data_type_full] = match_property[0].split(":");
-
-                                            const start_column = actual_left + match_property.index;
-
-                                            const prop_name = prop_name_full.trim();
-                                            const data_type = data_type_full.trim();
-
-                                            console.log(current_typedef, prop_name, data_type)
-                                            temp_decorations.push({
-                                                typedef_property_name: prop_name,
-                                                loc: {
-                                                    start: {
-                                                        line: actual_line,
-                                                        column: start_column,
-                                                    },
-                                                    end: {
-                                                        line: actual_line,
-                                                        column: start_column + prop_name.length,
-                                                    }
-                                                },
-                                            });
-
-                                            const start_column_data_type = start_column + prop_name.length + 1 + data_type_full.indexOf(data_type);
-
-                                            temp_decorations.push({
-                                                typedef_data_type: data_type,
-                                                loc: {
-                                                    start: {
-                                                        line: actual_line,
-                                                        column: start_column_data_type,
-                                                    },
-                                                    end: {
-                                                        line: actual_line,
-                                                        column: start_column_data_type + data_type.length,
-                                                    }
-                                                },
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     const comment = comments[comments.length - 1];
                     if (comment.kind === "commentblock") {
                         if (comment.value.match(/@type .*{.*}/)) {
@@ -609,7 +639,7 @@ function crawlCodePart(code_part: any) {
                     crawlCodePart(left);
 
                     if (left.data_type && right.data_type && left.data_type != right.data_type) {
-                        console.error("Wrong assignment :P");
+                        //console.error("Wrong assignment :P");
                         temp_decorations.push({
                             error: `Cannot assign **${right.data_type}** to **${left.data_type}**!`,
                             loc: code_part.expression.loc
@@ -754,11 +784,12 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             const data_type = code_decoration.data_type;
             const data_type_data = code_decoration.data_type_data;
 
-            if (data_type) {
-                description += `**Wo997 Type:**\n\n${data_type}\n\n`;
+            const display_type = util.probablyJSON(data_type) ? "custom" : data_type;
+            if (display_type) {
+                description += `**Wo997 Type:**\n\n${display_type}\n\n`;
             }
             if (data_type_data) {
-                description += JSON.stringify(data_type_data) + "\n\n";
+                description += Object.keys(data_type_data.properties).map((e: any) => " • " + e).join("\n\n") + "\n\n";
             }
 
             const myContent = new vscode.MarkdownString(description);
