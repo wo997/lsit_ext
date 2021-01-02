@@ -117,6 +117,7 @@ export function getCompletionItemsPHP(document: vscode.TextDocument, position: v
 
 const data_type_data_arr: any = {
     Cat: {
+        type: "object",
         properties: {
             age: {
                 data_type: "CatAge",
@@ -130,6 +131,7 @@ const data_type_data_arr: any = {
         }
     },
     CatAge: {
+        type: "object",
         properties: {
             value: {
                 data_type: "number",
@@ -158,16 +160,21 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
     if (!code_part || !data_type) {
         return;
     }
-    //console.log("!!!!!!!!!!assigning " + data_type + " to ", code_part);
 
     code_part.data_type = data_type;
 
-    if (util.probablyJSON(data_type)) {
-        code_part.data_type_data = JSON.parse(data_type);
+    if (data_type.endsWith("[]")) {
+        code_part.data_type_data = {
+            type: "array"
+        };
     } else {
-        const data_type_data = data_type_data_arr[data_type];
-        if (data_type_data) {
-            code_part.data_type_data = data_type_data;
+        if (util.probablyJSON(data_type)) {
+            code_part.data_type_data = JSON.parse(data_type);
+        } else {
+            const data_type_data = data_type_data_arr[data_type];
+            if (data_type_data) {
+                code_part.data_type_data = data_type_data;
+            }
         }
     }
 
@@ -463,7 +470,7 @@ function crawlCodePart(code_part: any) {
             {
                 const data_type = code_part.data_type;
                 const data_type_data = code_part.data_type_data;
-                if (data_type_data) {
+                if (data_type_data && data_type_data.properties) {
                     assignDataType(code_part, data_type);
 
                     for (const item of code_part.items) {
@@ -529,7 +536,7 @@ function crawlCodePart(code_part: any) {
                 if (!code_part.data_type) {
                     assignDataType(code_part, "number");
                 }
-            }
+            }//
             break;
         case "string":
             {
@@ -565,6 +572,26 @@ function crawlCodePart(code_part: any) {
                     assignScope(expression, code_part);
                     crawlCodePart(expression);
                 }
+            }
+            break;
+        case "foreach":
+            {
+                const source = code_part.source;
+                const value = code_part.value;
+                const body = code_part.body;
+
+                assignScope(source, code_part);
+                crawlCodePart(source);
+
+                assignScope(value, code_part);
+                if (source.data_type && source.data_type.endsWith("[]") && value.kind == "variable") {
+                    console.log("CIPA", source.data_type.substring(0, source.data_type.length - 2), value);
+                    assignDataType(value, source.data_type.substring(0, source.data_type.length - 2));
+                }
+                crawlCodePart(value);
+
+                assignScope(body, code_part);
+                crawlCodePart(body);
             }
             break;
         case "expressionstatement":
@@ -788,7 +815,7 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             if (display_type) {
                 description += `**Wo997 Type:**\n\n${display_type}\n\n`;
             }
-            if (data_type_data) {
+            if (data_type_data && data_type_data.properties) {
                 description += Object.keys(data_type_data.properties).map((e: any) => " • " + e).join("\n\n") + "\n\n";
             }
 
