@@ -1,11 +1,8 @@
 import * as vscode from "vscode";
-import { Program, Block } from 'php-parser';
-import { cloneObject, deepAssign } from './util';
-import { visibleRanges, textChangeEventTimeout, extractEntityName, getEntityInCodeObj, decorate_entity, entity_data_files, entity_definitions, filePathClean, workspace_path, decorate_wo997_annotation } from './extension';
 
 const esprima = require('esprima');
 
-export function scanFileJS(editor: vscode.TextEditor, sourceCode: string, sourceCodeArr: string[]) {
+export function scanFile(editor: vscode.TextEditor, sourceCode: string) {
     //const result = esprima.parseScript(sourceCode);
     //console.log(result);
 }

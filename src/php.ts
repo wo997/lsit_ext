@@ -4,7 +4,7 @@ import * as ext from './extension';
 import * as sql from './sql';
 
 const engine = require('php-parser');
-// initialize a new parser instance
+
 const php_parser = new engine({
     parser: {
         extractDoc: true,
@@ -17,23 +17,29 @@ const php_parser = new engine({
     }
 });
 
-//let code_data_in_current_editor: any = {};
-//let temp_code_data: any = [];
+export interface TypeDef {
+    name: string;
+    properties: any
+}
 
-let code_decorations: any = [];
-let temp_decorations: any = {};
+enum ScanTypeEnum {
+    "decorate",
+    "get_metadata"
+}
 
-//let php_parsed: any;
+let scan_type: ScanTypeEnum = ScanTypeEnum.decorate;
+
+let temp_decorations: any = [];
+
+let file_typedefs: TypeDef[] = [];
+let temp_file_typedefs: TypeDef[] = [];
+
+// usually holds a single or multiple code parts nearby the cursor
 let interesting_code_parts: any;
 let temp_interesting_code_parts: any;
 
-export function getCompletionItemsPHP(document: vscode.TextDocument, position: vscode.Position, linePrefix: string): vscode.CompletionItem[] | undefined {
-    //console.log("!!!!!!!!!!!!===", interesting_code_parts);
-    /*for (const a of interesting_code_parts) {
-        console.log(a.kind);
-    }
-    return;*/
 
+export function getCompletionItems(document: vscode.TextDocument, position: vscode.Position, linePrefix: string): vscode.CompletionItem[] | undefined {
     for (const code_part of interesting_code_parts) {
         //console.log("test", code_part.entry, "p1", code_part.loc.start, "p2", position, code_part.loc.start.column <= position.character, code_part.loc.end.column >= position.character);
         //console.log("CIPSADASDASDFASDFASDFASDFasdf", code_part.kind, "&&", code_part.possible_properties, "&&", code_part.loc.start.line - 1, "===", position.line, "&&", code_part.loc.start.column, "<=", position.character, "&&", code_part.loc.end.column, ">=", position.character);
@@ -60,59 +66,6 @@ export function getCompletionItemsPHP(document: vscode.TextDocument, position: v
     }
 
     return undefined;
-    // // spot entity by __
-    // const entity_name_index = linePrefix.lastIndexOf("__");
-    // if (entity_name_index !== -1) {
-    //     for (const code_part_data of code_data_in_current_editor) {
-    //         if (code_part_data.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= entity_name_index && code_part_data.loc.end.column >= entity_name_index) {
-    //             const start_index = entity_name_index + 2;
-    //             const match = linePrefix.substr(start_index).match(/\w*(["']\])?\[["']\w*/);
-    //             if (match && match[0] && match[0].length === linePrefix.length - start_index) {
-    //                 return code_part_data.entity.suggestions;
-    //             }
-    //         }
-    //     }
-    // }
-
-    // // spot function argument
-    // for (const code_part_data of code_data_in_current_editor) {
-    //     //console.log("test", code_part_data.entry, "p1", code_part_data.loc.start, "p2", position, code_part_data.loc.start.column <= position.character, code_part_data.loc.end.column >= position.character);
-    //     if (code_part_data.entry && code_part_data.entry.entity && code_part_data.loc.start.line - 1 === position.line && code_part_data.loc.start.column <= position.character && code_part_data.loc.end.column >= position.character) {
-    //         let entity_name = code_part_data.entry.entity.name;
-
-    //         //console.log("omw", code_part_data, { entity_name });
-
-    //         const entity_data = entity_definitions[entity_name];
-    //         //console.log({ entity_data });
-    //         if (!entity_data || !entity_data.properties) {
-    //             continue;
-    //         }
-
-    //         let suggestions: any = [];
-    //         Object.entries(entity_data.properties).forEach(([property_name, property_data]: [any, any]) => {
-
-    //             const completion_item = new vscode.CompletionItem(property_name, vscode.CompletionItemKind.Property)
-    //             if (property_data.type) {
-    //                 completion_item.detail = property_data.type;
-    //             }
-    //             // TODO: greeeeeat, we can cleanup single line of code 
-    //             /*completion_item.command = {
-    //                 title: "aaa",
-    //                 command: "",
-    //             };*/
-
-    //             if (property_data.description) {
-    //                 completion_item.documentation = property_data.description;
-    //             }
-    //             suggestions.push(completion_item);
-    //         });
-    //         return suggestions;
-
-    //         //console.log("love");
-    //     }
-    // }
-
-    // return undefined;
 }
 
 const data_type_data_arr: any = {
@@ -169,9 +122,10 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         };
     } else {
         if (util.probablyJSON(data_type)) {
+            // TODO: try catch?
             code_part.data_type_data = JSON.parse(data_type);
         } else {
-            const data_type_data = data_type_data_arr[data_type];
+            const data_type_data = ext.php_type_defs[data_type];
             if (data_type_data) {
                 code_part.data_type_data = data_type_data;
             }
@@ -183,12 +137,12 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
 }
 
 function addInterestingCodePart(code_part: any) {
-    if (isCodePartVisible(code_part)) {
+    if (isCursorInCodePart(code_part)) {
         temp_interesting_code_parts.push(code_part);
     }
 }
 
-function isCodePartVisible(code_part: any) {
+function isCursorInCodePart(code_part: any) {
     const selection = vscode.window.activeTextEditor?.selection;
     return selection
         && code_part.loc.start.line - 1 === selection.start.line
@@ -199,12 +153,14 @@ function isCodePartVisible(code_part: any) {
 function crawlCodePartComments(comments: any) {
     for (const comment of comments) {
         if (comment.kind === "commentblock") {
-            let line_count = -1;
-            let current_typedef = null;
-            for (const line of comment.value.split("\n")) {
-                line_count++;
-                const actual_left = line_count === 0 ? comment.loc.start.column : 0;
-                const actual_line = comment.loc.start.line + line_count;
+            let current_typedef: TypeDef | null = null;
+
+            const lines = comment.value.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                const actual_left = i === 0 ? comment.loc.start.column : 0;
+                const actual_line = comment.loc.start.line + i;
 
                 if (line.match(/@typedef .*{/m,)) {
                     const match_annotation_type = line.match(/@\w*/);
@@ -233,7 +189,10 @@ function crawlCodePartComments(comments: any) {
                     if (match_typedef) {
                         const typedef = match_typedef[0];
 
-                        current_typedef = typedef;
+                        current_typedef = {
+                            name: typedef,
+                            properties: {}
+                        };
 
                         const start_column = actual_left + match_typedef.index;
 
@@ -274,9 +233,12 @@ function crawlCodePartComments(comments: any) {
 
                 if (current_typedef) {
                     const match_end = line.match(/}/);
-                    if (match_end) {
+                    if ((match_end || i == lines.length - 1) && current_typedef) {
+                        temp_file_typedefs.push(current_typedef);
                         current_typedef = null;
+                    }
 
+                    if (match_end) {
                         const start_column = actual_left + match_end.index;
 
                         temp_decorations.push({
@@ -303,7 +265,6 @@ function crawlCodePartComments(comments: any) {
                             const prop_name = prop_name_full.trim();
                             const data_type = data_type_full.trim();
 
-                            console.log(current_typedef, prop_name, data_type)
                             temp_decorations.push({
                                 typedef_property_name: prop_name,
                                 loc: {
@@ -319,6 +280,7 @@ function crawlCodePartComments(comments: any) {
                             });
 
                             const start_column_data_type = start_column + prop_name.length + 1 + data_type_full.indexOf(data_type);
+                            const end_column_data_type = start_column_data_type + data_type.length;
 
                             temp_decorations.push({
                                 typedef_data_type: data_type,
@@ -329,10 +291,22 @@ function crawlCodePartComments(comments: any) {
                                     },
                                     end: {
                                         line: actual_line,
-                                        column: start_column_data_type + data_type.length,
+                                        column: end_column_data_type,
                                     }
                                 },
                             });
+
+                            const description = line.substring(end_column_data_type - actual_left).trim();
+
+                            if (current_typedef) {
+                                const data_type_obj: any = {
+                                    data_type
+                                };
+                                if (description) {
+                                    data_type_obj.description = description;
+                                }
+                                current_typedef.properties[prop_name] = data_type_obj;
+                            }
                         }
                     }
                 }
@@ -349,37 +323,46 @@ function crawlCodePart(code_part: any) {
         code_part.level = 0;
     }
 
-    if (!ext.visibleRanges) {
-        return;
-    }
-    const visibleRange = ext.visibleRanges[0];
-
-    if (visibleRange.start === null || visibleRange.end === null) {
-        return;
-    }
-
-    // editing? show just the part we can see, eeeeezy
-    if (ext.textChangeEventTimeout) {
-        //const cx0 = code_part.loc.start.column;
-        const cy0 = code_part.loc.start.line - 1;
-        //const cx1 = code_part.loc.end.column;
-        const cy1 = code_part.loc.end.line - 1;
-        //const vx0 = visibleRange.start.character;
-        const vy0 = visibleRange.start.line;
-        //const vx1 = visibleRange.endcharacter;
-        const vy1 = visibleRange.end.line;
-
-        if (cy0 <= vy1 && cy1 >= vy0) {
-            //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
-        }
-        else {
-            //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+    if (scan_type == ScanTypeEnum.decorate) {
+        if (!ext.visibleRanges) {
             return;
         }
+        const visibleRange = ext.visibleRanges[0];
+
+        if (visibleRange.start === null || visibleRange.end === null) {
+            return;
+        }
+
+        // editing? show just the part we can see, eeeeezy
+        if (ext.textChangeEventTimeout) {
+            //const cx0 = code_part.loc.start.column;
+            const cy0 = code_part.loc.start.line - 1;
+            //const cx1 = code_part.loc.end.column;
+            const cy1 = code_part.loc.end.line - 1;
+            //const vx0 = visibleRange.start.character;
+            const vy0 = visibleRange.start.line;
+            //const vx1 = visibleRange.endcharacter;
+            const vy1 = visibleRange.end.line;
+
+            if (cy0 <= vy1 && cy1 >= vy0) {
+                //console.log("inside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+            }
+            else {
+                //console.log("outside" + " " + cy0 + " " + cy1 + " " + vy0 + " " + vy1);
+                return;
+            }
+        }
     }
 
-
-    const comments = code_part.leadingComments;
+    let comments: any = [];
+    const leadingComments = code_part.leadingComments;
+    const trailingComments = code_part.trailingComments;
+    if (leadingComments) {
+        comments.push(...leadingComments);
+    }
+    if (trailingComments) {
+        comments.push(...trailingComments);
+    }
     if (comments) {
         crawlCodePartComments(comments);
     }
@@ -434,7 +417,7 @@ function crawlCodePart(code_part: any) {
                     assignScope(arg, code_part);
 
                     const data_type = args_data_types[argument_index];
-                    const data_type_data = data_type_data_arr[data_type];
+                    const data_type_data = ext.php_type_defs[data_type];
                     if (data_type_data) {
                         assignDataType(arg, data_type);
                     }
@@ -485,7 +468,6 @@ function crawlCodePart(code_part: any) {
 
                         if (item.key && item.key.kind === "string" && item.value) {
                             const sub_data_type_data = data_type_data.properties[item.key.value];
-                            //data_type_data_arr
                             if (sub_data_type_data) {
                                 assignDataType(item.value, sub_data_type_data.data_type);
                             }
@@ -585,7 +567,6 @@ function crawlCodePart(code_part: any) {
 
                 assignScope(value, code_part);
                 if (source.data_type && source.data_type.endsWith("[]") && value.kind == "variable") {
-                    console.log("CIPA", source.data_type.substring(0, source.data_type.length - 2), value);
                     assignDataType(value, source.data_type.substring(0, source.data_type.length - 2));
                 }
                 crawlCodePart(value);
@@ -764,7 +745,34 @@ function crawlCodePart(code_part: any) {
     }
 }
 
-export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourceCodeArr: string[]) {
+function cleanupTempVars() {
+    temp_decorations = [];
+    temp_interesting_code_parts = [];
+    temp_file_typedefs = [];
+}
+
+export function getFileMetadata(sourceCode: string): ext.FileData | undefined {
+    scan_type = ScanTypeEnum.get_metadata;
+
+    cleanupTempVars();
+
+    const php_parsed = php_parser.parseCode(sourceCode);
+
+    try {
+        crawlCodePart(php_parsed);
+    } catch (e) {
+        console.error('get code data errors:', e);
+        return undefined;
+    }
+
+    file_typedefs = temp_file_typedefs;
+
+    return { typedefs: file_typedefs };
+}
+
+export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
+    scan_type = ScanTypeEnum.decorate;
+
     let entity_decorations: vscode.DecorationOptions[] = [];
     let annotation_type_decorations: vscode.DecorationOptions[] = [];
     let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
@@ -776,11 +784,8 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
     const d0 = new Date();
     const php_parsed = php_parser.parseCode(sourceCode);
     console.log("Parse AST time: " + ((new Date()).getTime() - d0.getTime()).toString());
-    //console.log(php_parsed, php_parsed.comments[2]);
-    //return;
 
-    temp_decorations = [];
-    temp_interesting_code_parts = [];
+    cleanupTempVars();
 
     const d = new Date();
     try {
@@ -792,10 +797,11 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
     console.log("Parse code time " + ((new Date()).getTime() - d.getTime()).toString());
     console.log("php_parsed", php_parsed);
 
-    code_decorations = temp_decorations;
+    const code_decorations = temp_decorations;
     interesting_code_parts = temp_interesting_code_parts;
+    file_typedefs = temp_file_typedefs;
 
-    //console.log(code_decorations);
+    //console.log(file_typedefs);
 
     for (const code_decoration of code_decorations) {
         const loc = code_decoration.loc;
@@ -890,74 +896,6 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
             let decoration: vscode.DecorationOptions = { range };
             curly_braces_decorations.push(decoration);
         }
-
-
-
-
-
-        /*if (code_part_data.entity) {
-            const entity_name = code_part_data.entity.name;
- 
-            //code_part_data.entity.suggestions
- 
-            // reference_files could also be semi cached once we find something, totally optional
-            // OR EVEN BETTER you can repeat the process for repeating entities or go for a singleton style
-            // butt... I don't think we will even need them lol
-            const reference_files = Object.entries(entity_data_files).filter(([file, data]: any) => {
-                return data.entity_name === entity_name;
-            }).map(e => {
-                return e[0];
-            });
-            const reference_files_string = reference_files.map(e => { return `[${e.replace(filePathClean(workspace_path), '')}](/${e})` }).join("\n\n");
- 
-            let definition_pretty_string = "";
-            const entity_definition = entity_definitions[entity_name];
-            const entity_properties = Object.keys(entity_definition.properties);
-            if (entity_properties.length > 0) {
-                definition_pretty_string += "\n\n**Properties:**" + entity_properties.map(e => { return "\n\n• " + e }).join("");
-            }
- 
-            const myContent = new vscode.MarkdownString(`**Entity name:**\n\n${entity_name}${definition_pretty_string}\n\n**See definitions:**\n\n${reference_files_string}`);
-            myContent.isTrusted = true;
- 
-            let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
- 
-            entity_decorations.push(decoration);
-        }
- 
-        if (code_part_data.entry) {
-            const prop_name = code_part_data.entry.text;
- 
-            const entity_name = code_part_data.entry.entity.name;
-            const entity_definition = entity_definitions[code_part_data.entry.entity.name];
-            if (!entity_definition || !entity_definition.properties || !Object.keys(entity_definition.properties).includes(prop_name)) {
-                continue;
-            }
- 
-            let description = "";
-            const property_obj: any = Object.entries(entity_definition.properties).find(([name, props]) => {
-                return name === prop_name;
-            });
-            if (property_obj) {
-                const property_data = property_obj[1];
-                if (property_data.type) {
-                    description += `**Type:**\n\n${property_data.type}`;
-                }
-                if (property_data.description) {
-                    description += `\n\n**Description:**\n\n${property_data.description}`;
-                }
-                description += `\n\n**Instance of:**\n\n${entity_name}`;
-                description += `\n\n**Property name:**\n\n${prop_name}`;
-            }
- 
-            const myContent = new vscode.MarkdownString(description);
-            myContent.isTrusted = true;
- 
-            let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
- 
-            // that's kinda fake, it is actually an entry decoration but I use it as a style
-            entity_decorations.push(decoration);
-        }*/
     }
 
     editor.setDecorations(ext.decorate_entity, entity_decorations);
@@ -970,6 +908,8 @@ export function scanFilePHP(editor: vscode.TextEditor, sourceCode: string, sourc
 
 
     let wo997_annotation_decorations: vscode.DecorationOptions[] = [];
+
+    const sourceCodeArr = sourceCode.split('\n');
 
     for (let line_id = 0; line_id < sourceCodeArr.length; line_id++) {
         const line = sourceCodeArr[line_id];

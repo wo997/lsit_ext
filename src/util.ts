@@ -11,7 +11,7 @@ export function cloneObject(obj: any, src = null) {
     let obj_b: any = src ? src : (Array.isArray(obj) ? [] : {});
     for (const k in obj) {
         v = obj[k];
-        obj_b[k] = typeof v === "object" ? cloneObject(v) : v;
+        obj_b[k] = typeof v === "object" ? cloneObject(v, obj_b[k]) : v;
     }
 
     return obj_b;

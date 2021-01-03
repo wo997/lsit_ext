@@ -2,25 +2,24 @@
 
 import * as vscode from "vscode";
 import * as fs from 'fs';
-import { cloneObject, deepAssign } from './util';
-import { scanFilePHP, getCompletionItemsPHP } from './php';
-import { scanFileJS } from './js';
+import * as php from './php';
+import * as js from './js';
+import * as util from "./util";
 
 const window = vscode.window;
 
-export let entity_data_files: any = {};
-export let entity_definitions: any = {};
-let code_data_in_current_editor: any = {};
+export interface FileData {
+    typedefs?: php.TypeDef[]
+}
+
+// store some data under each file's path
+export let files_data: any = {};
+export let php_type_defs: any = {};
 export let visibleRanges: vscode.Range[] | undefined = undefined;
 export let textChangeEventTimeout: any = null;
 
 let IS_JS = false;
 let IS_PHP = false;
-
-interface file_data {
-    entity_name: any,
-    entity_definition: any,
-}
 
 export const decorate_wo997_annotation = vscode.window.createTextEditorDecorationType({
     color: '#a3c',
@@ -136,9 +135,9 @@ export function activate(context: vscode.ExtensionContext) {
     const provideCompletionItems = (document: vscode.TextDocument, position: vscode.Position) => {
         const linePrefix = document.lineAt(position).text.substr(0, position.character);
 
-        console.log("IS_PHP", IS_PHP);
+        //console.log("IS_PHP", IS_PHP);
         if (IS_PHP) {
-            return getCompletionItemsPHP(document, position, linePrefix);
+            return php.getCompletionItems(document, position, linePrefix);
         }
 
         return undefined;
@@ -160,70 +159,23 @@ export function activate(context: vscode.ExtensionContext) {
     }
 }
 
-// this method is called when your extension is deactivated
-export function deactivate() { }
+function updateFile(file_path: string) {
+    try {
+        file_path = filePathClean(file_path);
+        const sourceCode = fs.readFileSync(file_path, "utf-8");
 
-function entityFound(entity_name: string) {
-    const entity_data = entity_definitions[entity_name];
-    if (!entity_data || !entity_data.properties) {
-        return undefined;
+        if (file_path.endsWith(".php")) {
+            const file_data = php.getFileMetadata(sourceCode);
+            if (file_data && file_data?.typedefs?.length) {
+                files_data[file_path] = file_data;
+                //console.log("============ " + file_path, file_data);
+            } else {
+                delete files_data[file_path];
+                //console.log("D " + file_path);
+            }
+        }
     }
-
-    let suggestions: any = [];
-    Object.entries(entity_data.properties).forEach(([property_name, property_data]: [any, any]) => {
-
-        const completion_item = new vscode.CompletionItem(property_name, vscode.CompletionItemKind.Property)
-        if (property_data.type) {
-            completion_item.detail = property_data.type;
-        }
-
-        if (property_data.description) {
-            completion_item.documentation = property_data.description;
-        }
-        suggestions.push(completion_item);
-    });
-    return suggestions;
-};
-
-function updateDefiniton(entity_name: string) {
-    let entity_definition: any = {};
-
-    Object.entries(entity_data_files).forEach(([file_path, file_data]: any) => {
-        if (!file_data || file_data.entity_name !== entity_name) {
-            return;
-        }
-        // TODO: it's a place where you want to merge props and methods maybe
-        entity_definition = deepAssign(entity_definition, file_data.entity_definition);
-    });
-
-    entity_definitions[entity_name] = entity_definition;
-}
-
-function updateFile(file_path: string): file_data {
-    const def_str = "_definition.json";
-
-    const file_name = file_path.substr(file_path.lastIndexOf("/") + 1);
-
-    let entity_name: any = null;
-    let entity_definition: any = null;
-
-    if (file_name.endsWith(def_str)) {
-        entity_name = file_name.substring(0, file_name.length - def_str.length);
-
-        try {
-            file_path = filePathClean(file_path);
-            const text_content = fs.readFileSync(file_path, "utf-8");
-            const file_parsed = JSON.parse(text_content);
-
-            entity_definition = file_parsed;
-        }
-        catch (e) { }
-    }
-
-    return {
-        entity_name,
-        entity_definition
-    };
+    catch (e) { }
 }
 
 export function filePathClean(file_path: string): string {
@@ -255,40 +207,51 @@ function indexFiles() {
                 }
                 Object.assign(entity_data_files_sub, scanFilesInDir(file_path));
             } else {
-                const data = updateFile(file_path);
-                if (data.entity_name) {
-                    entity_data_files_sub[file_path] = data;
-                }
+                updateFile(file_path);
             }
         });
 
         return entity_data_files_sub;
     }
 
-    entity_data_files = scanFilesInDir(project_root);
+    files_data = {};
+    scanFilesInDir(project_root);
+    filesUpdated();
+}
 
-    let unique_entities: any = [];
-    Object.entries(entity_data_files).forEach(([file_path, file_data]: any) => {
-        if (unique_entities.includes(file_data.entity_name)) {
-            return;
-        }
-        unique_entities.push(file_data.entity_name);
-        updateDefiniton(file_data.entity_name);
+function filesUpdated() {
+    //console.log("files_data", files_data);
+
+    let temp_php_type_defs: any = {};
+
+    // @ts-ignore
+    Object.values(files_data).forEach((file_data: FileData) => {
+        file_data.typedefs?.forEach((file_type_def: php.TypeDef) => {
+            let type_def: php.TypeDef = temp_php_type_defs[file_type_def.name];
+            if (!type_def) {
+                type_def = {
+                    name: file_type_def.name,
+                    properties: {}
+                };
+                temp_php_type_defs[type_def.name] = type_def;
+            }
+            util.deepAssign(type_def.properties, file_type_def.properties);
+        })
     });
 
+    php_type_defs = temp_php_type_defs;
+
+    console.log("php_type_defs", php_type_defs);
 }
 
 function watchFiles() {
-    const watcher: vscode.FileSystemWatcher = vscode.workspace.createFileSystemWatcher("**/*.json"); //glob search string
+    const watcher: vscode.FileSystemWatcher = vscode.workspace.createFileSystemWatcher("**/*.php"); //glob search string
 
     const anyFilechange = (uri: vscode.Uri) => {
         const file_path = filePathClean(uri.path);
-        const file_data = updateFile(file_path);
+        updateFile(file_path);
 
-        if (file_data.entity_name) {
-            entity_data_files[file_path] = file_data;
-            updateDefiniton(file_data.entity_name);
-        }
+        filesUpdated();
 
         vscode.window.showInformationMessage("LSIT indexed changes in " + file_path);
     }
@@ -300,12 +263,6 @@ function watchFiles() {
 function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
         console.log(`Did change: ${event.document.uri}`, event);
-        // TODO:
-        // when "" or '' added you can easily tell that there is , in front comming, ezy man
-        // but rly that ezy? what if it was fine before? well here is a solution
-        // do that ONLY when you catch an error, simply repeat the process with that string assumed
-        // or maybe u wanna put it for a user but that might be too much
-        // only autocompletion should actually do that though
 
         decorateActiveEditor(event.document.uri);
 
@@ -319,13 +276,6 @@ function initSyntaxDecorator() {
             decorateActiveEditor(event.document.uri);
         }, 200);
     });
-
-    /*vscode.window.onDidChangeVisibleTextEditors(textEditors => {
-        console.log("vis", textEditors);
-        for (const editor of textEditors) {
-            console.log("vixs", editor.uri);
-        }
-    });*/
 
     vscode.window.onDidChangeActiveTextEditor(event => {
         console.log("Did change editor", event);
@@ -341,25 +291,6 @@ function initSyntaxDecorator() {
     });
 }
 
-export function extractEntityName(str: string) {
-    const matches = str.match(/\w*__/);
-    if (matches) {
-        const match = matches[0];
-        return match.substr(0, match.length - 2);
-    }
-    return "";
-}
-
-export function getEntityInCodeObj(loc: any, entity_name: string) {
-    return {
-        loc: loc,
-        entity: {
-            name: entity_name,
-            suggestions: entityFound(entity_name),
-        }
-    };
-}
-
 function decorateActiveEditor(uri: vscode.Uri) {
     const editor = vscode.window.activeTextEditor;
     if (!editor?.document || editor.document.uri !== uri) {
@@ -371,50 +302,26 @@ function decorateActiveEditor(uri: vscode.Uri) {
     IS_JS = document.uri.path.endsWith(".js");
     IS_PHP = document.uri.path.endsWith(".php");
 
-    /*const actualSourceCode = document.getText();
-
-    const actual_php_parsed = php_parser.parseCode(actualSourceCode, {
-        parser: {
-            suppressErrors: false,
-        },
-    });
-
-
-    const actualSourceCodeArr = actualSourceCode.split('\n');
-    const char_prev = actualSourceCode[editor.selection.start.line][editor.selection.start.character-1];
-    const char_next = actualSourceCode[editor.selection.start.line][editor.selection.end.character+1];
-    if ( == "" && actualSourceCode[editor.selection.start.line][editor.selection.start.character+1] == '"') {
-
-    }*/
-
-
-
     const sourceCode = document.getText();
 
-    let annotation_decorations: vscode.DecorationOptions[] = [];
-    let entity_decorations: vscode.DecorationOptions[] = [];
-    let expression_decorations: vscode.DecorationOptions[] = [];
     let exclude_decorations: vscode.DecorationOptions[] = [];
 
-    const sourceCodeArr = sourceCode.split('\n');
-
+    //const sourceCodeArr = sourceCode.split('\n');
 
     visibleRanges = vscode.window.activeTextEditor?.visibleRanges;
 
-
-
     if (visibleRanges && visibleRanges[0]) {
         if (IS_PHP) {
-            scanFilePHP(editor, sourceCode, sourceCodeArr);
+            php.decorateFile(sourceCode, editor);
         }
         if (IS_JS) {
-            scanFileJS(editor, sourceCode, sourceCodeArr);
+            //js.scanFile(editor, sourceCode);
         }
     }
 
-    const sourceCodeArrLen = sourceCodeArr.length;
-    let exclude_start_line = null;
-    for (let line_id = 0; line_id < sourceCodeArrLen; line_id++) {
+    //const sourceCodeArrLen = sourceCodeArr.length;
+    //let exclude_start_line = null;
+    /*for (let line_id = 0; line_id < sourceCodeArrLen; line_id++) {
         const line = sourceCodeArr[line_id];
 
         if (line_id === 0) {
@@ -424,7 +331,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
         }
 
         if (IS_JS) {
-            /* these are not used currently ;) */
+            // these are not used currently ;)
             const match_exclude_start = line.match(/\/\/.*exclude start/);
             if (match_exclude_start) {
                 exclude_start_line = line_id;
@@ -447,14 +354,8 @@ function decorateActiveEditor(uri: vscode.Uri) {
                 }
             }
         }
-    }
-
-    //editor.setDecorations(decorate_entity, entity_decorations);
-    //editor.setDecorations(decorate_wo997_annotation, annotation_decorations);
-    //editor.setDecorations(decorate_expression, expression_decorations);
-    //editor.setDecorations(docorate_exclude, exclude_decorations);
-
-
-    console.log("Set decorations");
+    }*/
 }
 
+// this method is called when your extension is deactivated
+export function deactivate() { }
