@@ -114,9 +114,14 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         return;
     }
 
+    if (scan_type === ScanTypeEnum.decorate) {
+        console.trace();
+        console.log(code_part, data_type);
+    }
+
     code_part.data_type = data_type;
 
-    if (data_type.endsWith("[]")) {
+    if (ArrayDataTypeToSingle(data_type)) {
         code_part.data_type_data = {
             type: "array"
         };
@@ -315,6 +320,81 @@ function crawlCodePartComments(comments: any) {
     }
 }
 
+function variableAlike(code_part: any) {
+    const comments = code_part.leadingComments;
+
+    let annotation_data_type = null;
+
+    if (comments && comments.length > 0) {
+        const comment = comments[comments.length - 1];
+
+        if (comment.kind === "commentblock") {
+            if (comment.value.match(/@type .*{.*}/)) {
+                const match_annotation_type = comment.value.match(/@\w*/);
+                if (match_annotation_type) {
+                    const annotation_type = match_annotation_type[0];
+
+                    const start_column = comment.loc.start.column + match_annotation_type.index;
+
+                    temp_decorations.push({
+                        annotation: annotation_type,
+                        loc: {
+                            start: {
+                                line: comment.loc.start.line,
+                                column: start_column,
+                            },
+                            end: {
+                                line: comment.loc.start.line,
+                                column: start_column + annotation_type.length,
+                            }
+                        },
+                    });
+                }
+
+                const match_annotation_data_type = comment.value.match(/{.*}/);
+                if (match_annotation_data_type) {
+                    const data_type = match_annotation_data_type[0];
+                    annotation_data_type = data_type.substring(1, data_type.length - 1);
+
+                    const start_column = comment.loc.start.column + match_annotation_data_type.index;
+
+                    temp_decorations.push({
+                        annotation_data_type: annotation_data_type,
+                        loc: {
+                            start: {
+                                line: comment.loc.start.line,
+                                column: start_column,
+                            },
+                            end: {
+                                line: comment.loc.start.line,
+                                column: start_column + data_type.length,
+                            }
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    if (annotation_data_type) {
+        // sometimes a var, sometimes an offset lookup
+        let ref = code_part;
+        while (ref.kind == "offsetlookup") {
+            ref = ref.what;
+        }
+        if (ref) {
+            assignDataType(ref, annotation_data_type);
+        }
+    }
+}
+
+function ArrayDataTypeToSingle(data_type: string) {
+    if (data_type && data_type.endsWith("[]")) {
+        return data_type.substring(0, data_type.length - 2);
+    }
+    return null;
+}
+
 function crawlCodePart(code_part: any) {
     /*if (!code_part.buffer) {
         code_part.buffer = {};
@@ -494,6 +574,8 @@ function crawlCodePart(code_part: any) {
             break;
         case "variable":
             {
+                variableAlike(code_part);
+
                 let data_type = code_part.data_type;
                 /*console.log("VARariables", code_part.scope.variables,
                     "data_type", data_type);*/
@@ -566,8 +648,11 @@ function crawlCodePart(code_part: any) {
                 crawlCodePart(source);
 
                 assignScope(value, code_part);
-                if (source.data_type && source.data_type.endsWith("[]") && value.kind == "variable") {
-                    assignDataType(value, source.data_type.substring(0, source.data_type.length - 2));
+                if (value.kind == "variable") {
+                    const child_data_type = ArrayDataTypeToSingle(source.data_type);
+                    if (child_data_type) {
+                        assignDataType(value, child_data_type);
+                    }
                 }
                 crawlCodePart(value);
 
@@ -577,73 +662,20 @@ function crawlCodePart(code_part: any) {
             break;
         case "expressionstatement":
             {
-                const comments = code_part.leadingComments;
-
-                let annotation_data_type = null;
-
-                if (comments && comments.length > 0) {
-                    const comment = comments[comments.length - 1];
-                    if (comment.kind === "commentblock") {
-                        if (comment.value.match(/@type .*{.*}/)) {
-                            const match_annotation_type = comment.value.match(/@\w*/);
-                            if (match_annotation_type) {
-                                const annotation_type = match_annotation_type[0];
-
-                                const start_column = comment.loc.start.column + match_annotation_type.index;
-
-                                temp_decorations.push({
-                                    annotation: annotation_type,
-                                    loc: {
-                                        start: {
-                                            line: comment.loc.start.line,
-                                            column: start_column,
-                                        },
-                                        end: {
-                                            line: comment.loc.start.line,
-                                            column: start_column + annotation_type.length,
-                                        }
-                                    },
-                                });
-                            }
-
-                            const match_annotation_data_type = comment.value.match(/{.*}/);
-                            if (match_annotation_data_type) {
-                                const data_type = match_annotation_data_type[0];
-                                annotation_data_type = data_type.substring(1, data_type.length - 1);
-
-                                const start_column = comment.loc.start.column + match_annotation_data_type.index;
-
-                                temp_decorations.push({
-                                    annotation_data_type: annotation_data_type,
-                                    loc: {
-                                        start: {
-                                            line: comment.loc.start.line,
-                                            column: start_column,
-                                        },
-                                        end: {
-                                            line: comment.loc.start.line,
-                                            column: start_column + data_type.length,
-                                        }
-                                    },
-                                });
-                            }
-                        }
-                    }
-                }
-
                 const left = code_part.expression.left;
                 const right = code_part.expression.right;
+
                 if (left && right) {
                     assignScope(left, code_part);
                     assignScope(right, code_part);
                     right.reference = left;
+
+                    variableAlike(right);
                     crawlCodePart(right);
 
-                    if (annotation_data_type) {
-                        //console.log(left, annotation_data_type);
-                        assignDataType(left, annotation_data_type);
-                    }
-
+                    // it's the way it is
+                    left.leadingComments = code_part.leadingComments;
+                    variableAlike(left);
                     crawlCodePart(left);
 
                     if (left.data_type && right.data_type && left.data_type != right.data_type) {
@@ -670,21 +702,28 @@ function crawlCodePart(code_part: any) {
 
                     crawlCodePart(what);
 
-                    if (what.data_type_data && what.data_type_data.properties) {
-                        //console.log("GIVE PROPERTIES ", what.data_type_data.properties, "TO", offset);
-                        offset.possible_properties = what.data_type_data.properties;
+                    if (what.data_type) {
+                        if (what.data_type_data && what.data_type_data.properties) {
+                            //console.log("GIVE PROPERTIES ", what.data_type_data.properties, "TO", offset);
+                            offset.possible_properties = what.data_type_data.properties;
 
-                        addInterestingCodePart(offset);
+                            addInterestingCodePart(offset);
 
-                        const offset_value = offset.value;
-                        const offset_property = offset.possible_properties[offset_value];
-                        if (offset_property) {
-                            //console.log("give offset data type " + offset_property.data_type + ":", offset);
-                            assignDataType(offset, offset_property.data_type);
+                            const offset_value = offset.value;
+                            const offset_property = offset.possible_properties[offset_value];
+                            if (offset_property) {
+                                //console.log("give offset data type " + offset_property.data_type + ":", offset);
+                                assignDataType(offset, offset_property.data_type);
+                            }
+                        } else {
+                            // we could restrict it to numbers but it's unnecessary
+                            // maybe a warning would be just fine
+                            const child_data_type = ArrayDataTypeToSingle(what.data_type);
+                            if (child_data_type) {
+                                assignDataType(offset, child_data_type);
+                            }
                         }
                     }
-
-                    crawlCodePart(offset);
 
                     if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
                         if (offset.data_type) {
@@ -822,7 +861,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
                 description += `**Wo997 Type:**\n\n${display_type}\n\n`;
             }
             if (data_type_data && data_type_data.properties) {
-                description += Object.keys(data_type_data.properties).map((e: any) => " • " + e).join("\n\n") + "\n\n";
+                description += Object.entries(data_type_data.properties).map(([prop_name, prop_data]: any) => ` • ${prop_name}: ${prop_data.data_type} ${prop_data.description ? " - " + prop_data.description : ""}`).join("\n\n") + "\n\n";
             }
 
             const myContent = new vscode.MarkdownString(description);

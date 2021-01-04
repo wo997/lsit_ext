@@ -241,7 +241,7 @@ function filesUpdated() {
 
     php_type_defs = temp_php_type_defs;
 
-    console.log("php_type_defs", php_type_defs);
+    //console.log("php_type_defs", php_type_defs);
 }
 
 function watchFiles() {
