@@ -114,10 +114,10 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         return;
     }
 
-    if (scan_type === ScanTypeEnum.decorate) {
+    /*if (scan_type === ScanTypeEnum.decorate) {
         console.trace();
         console.log(code_part, data_type);
-    }
+    }*/
 
     code_part.data_type = data_type;
 
@@ -167,7 +167,7 @@ function crawlCodePartComments(comments: any) {
                 const actual_left = i === 0 ? comment.loc.start.column : 0;
                 const actual_line = comment.loc.start.line + i;
 
-                if (line.match(/@typedef .*{/m,)) {
+                if (line.match(/@typedef .*{/,)) {
                     const match_annotation_type = line.match(/@\w*/);
 
                     if (match_annotation_type) {
@@ -377,15 +377,77 @@ function variableAlike(code_part: any) {
     }
 
     if (annotation_data_type) {
+        //console.log("annotation_data_type", annotation_data_type, code_part);
         // sometimes a var, sometimes an offset lookup
         let ref = code_part;
-        while (ref.kind == "offsetlookup") {
-            ref = ref.what;
+        while (ref.kind == "offsetlookup" && ref.offset) {
+            ref = ref.offset;
         }
         if (ref) {
             assignDataType(ref, annotation_data_type);
         }
     }
+}
+
+function beforeFunction(code_part: any) {
+    const comments = code_part.leadingComments;
+
+    if (comments && comments.length > 0) {
+        const comment = comments[comments.length - 1];
+
+        if (comment.kind === "commentblock") {
+            const lines = comment.value.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                const actual_left = i === 0 ? comment.loc.start.column : 0;
+                const actual_line = comment.loc.start.line + i;
+
+                const match_param_line = line.match(/@param +\w* +\$.+/);
+                if (match_param_line) {
+                    const [param_ann, data_type, var_name] = match_param_line[0].replace(/ +/, " ").split(" ");
+                    if (scan_type == ScanTypeEnum.decorate) {
+                        //console.log(data_type, var_name, code_part.arguments);
+                    }
+                    code_part.arguments.forEach((arg: any) => {
+                        if (scan_type == ScanTypeEnum.decorate) {
+                            console.log(arg.name.name, var_name, "$" + arg.name.name === var_name);
+                        }
+                        if (arg.name && "$" + arg.name.name === var_name) {
+                            assignDataType(arg, data_type);
+                            console.log("arg", arg);
+                        }
+                    })
+                }
+            }
+        }
+    }
+}
+
+function functionAlike(code_part: any) {
+    createScope(code_part);
+
+    const args = code_part.arguments;
+    const body = code_part.body;
+
+    args.forEach((arg: any) => {
+        assignScope(arg, code_part);
+        crawlCodePart(arg);
+    })
+
+    beforeFunction(code_part);
+
+    args.forEach((arg: any) => {
+        assignScope(arg, code_part);
+        crawlCodePart(arg);
+
+        if (arg.name && arg.name.name) {
+            arg.scope.variables[arg.name.name] = arg.data_type;
+        }
+    })
+
+    assignScope(body, code_part);
+    crawlCodePart(body);
 }
 
 function ArrayDataTypeToSingle(data_type: string) {
@@ -414,7 +476,7 @@ function crawlCodePart(code_part: any) {
         }
 
         // editing? show just the part we can see, eeeeezy
-        if (ext.textChangeEventTimeout) {
+        if (ext.textChangeEventTimeout && code_part.loc) {
             //const cx0 = code_part.loc.start.column;
             const cy0 = code_part.loc.start.line - 1;
             //const cx1 = code_part.loc.end.column;
@@ -524,6 +586,9 @@ function crawlCodePart(code_part: any) {
         case "block":
             {
                 for (const child of code_part.children) {
+                    if (scan_type === ScanTypeEnum.decorate) {
+                        console.log("childxxx", child);
+                    }
                     assignScope(child, code_part);
                     crawlCodePart(child);
                 }
@@ -673,7 +738,6 @@ function crawlCodePart(code_part: any) {
                     variableAlike(right);
                     crawlCodePart(right);
 
-                    // it's the way it is
                     left.leadingComments = code_part.leadingComments;
                     variableAlike(left);
                     crawlCodePart(left);
@@ -688,6 +752,9 @@ function crawlCodePart(code_part: any) {
                 } else {
                     const expression = code_part.expression;
                     assignScope(expression, code_part);
+
+                    expression.leadingComments = code_part.leadingComments;
+                    variableAlike(expression);
                     crawlCodePart(expression);
                 }
             }
@@ -728,7 +795,8 @@ function crawlCodePart(code_part: any) {
                     if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
                         if (offset.data_type) {
                             //console.log("from parent data type " + offset.data_type + ":", offset);
-                            assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                            //assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                            assignDataType(offset.parent_code_part, offset.data_type);
                         }
                     }
                 }
@@ -736,14 +804,14 @@ function crawlCodePart(code_part: any) {
             break;
         case "function":
             {
-                createScope(code_part);
-
-                //const args = code_part.arguments;
-                const body = code_part.body;
-                assignScope(body, code_part);
-                crawlCodePart(body);
+                functionAlike(code_part);
             }
             break;
+        /*case "parameter":
+            {
+                
+            }
+            break;*/
         case "class":
             {
                 createScope(code_part);
@@ -757,13 +825,7 @@ function crawlCodePart(code_part: any) {
             break;
         case "method":
             {
-                // act kinda like a function 
-                createScope(code_part);
-
-                //const args = code_part.arguments;
-                const body = code_part.body;
-                assignScope(body, code_part);
-                crawlCodePart(body);
+                functionAlike(code_part);
             }
             break;
     }
