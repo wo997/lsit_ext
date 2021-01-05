@@ -80,10 +80,13 @@ export const decorate_curly_braces = vscode.window.createTextEditorDecorationTyp
     color: '#ccc'
 });
 
+export const decorate_params = vscode.window.createTextEditorDecorationType({
+    color: '#3ac88f'
+});
 
-// replaced with php parser yay
-//const match_entities_regex = /(?<=\[("))([\w^_])*(?=(__\w*"\]))|(?<=\$)([\w^_])*(?=(__\w*\["))/g;
-//const match_entities_regex = /(?<=(\[))"([\w^_])*__\w*"(?=(\]))|(?<=)\$([\w^_])*__\w*/g;
+export const decorate_modifiers = vscode.window.createTextEditorDecorationType({
+    color: '#f56c1d',
+});
 
 export let workspace_path = "";
 
@@ -168,7 +171,7 @@ function updateFile(file_path: string) {
 
         if (file_path.endsWith(".php")) {
             const file_data = php.getFileMetadata(sourceCode);
-            if (file_data && file_data?.typedefs?.length) {
+            if (file_data && (file_data.typedefs?.length || file_data.functions?.length)) {
                 files_data[file_path] = file_data;
                 //console.log("============ " + file_path, file_data);
             } else {
@@ -246,6 +249,8 @@ function filesUpdated() {
             const function_def: php.Function = {
                 name: file_function.name,
                 args: file_function.args,
+                return_data_type: file_function.return_data_type,
+                return_modifiers: file_function.return_modifiers
             }
             temp_php_functions[file_function.name] = function_def;
         });
@@ -253,8 +258,8 @@ function filesUpdated() {
 
     php_type_defs = temp_php_type_defs;
     php_functions = temp_php_functions;
-    //console.log("php_type_defs", php_type_defs);
-    //console.log("php_functions", php_functions);
+    console.log("php_type_defs", php_type_defs);
+    console.log("php_functions", php_functions);
 }
 
 function watchFiles() {
