@@ -10,11 +10,13 @@ const window = vscode.window;
 
 export interface FileData {
     typedefs?: php.TypeDef[]
+    functions?: php.Function[]
 }
 
 // store some data under each file's path
 export let files_data: any = {};
 export let php_type_defs: any = {};
+export let php_functions: any = {};
 export let visibleRanges: vscode.Range[] | undefined = undefined;
 export let textChangeEventTimeout: any = null;
 
@@ -224,6 +226,8 @@ function filesUpdated() {
 
     let temp_php_type_defs: any = {};
 
+    let temp_php_functions: any = {};
+
     // @ts-ignore
     Object.values(files_data).forEach((file_data: FileData) => {
         file_data.typedefs?.forEach((file_type_def: php.TypeDef) => {
@@ -236,12 +240,21 @@ function filesUpdated() {
                 temp_php_type_defs[type_def.name] = type_def;
             }
             util.deepAssign(type_def.properties, file_type_def.properties);
-        })
+        });
+
+        file_data.functions?.forEach((file_function: php.Function) => {
+            const function_def: php.Function = {
+                name: file_function.name,
+                args: file_function.args,
+            }
+            temp_php_functions[file_function.name] = function_def;
+        });
     });
 
     php_type_defs = temp_php_type_defs;
-
+    php_functions = temp_php_functions;
     //console.log("php_type_defs", php_type_defs);
+    console.log("php_functions", php_functions);
 }
 
 function watchFiles() {

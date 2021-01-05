@@ -22,6 +22,16 @@ export interface TypeDef {
     properties: any
 }
 
+export interface Function {
+    name: string;
+    args: any
+}
+
+interface FunctionArgument {
+    name: string;
+    data_type: string
+}
+
 enum ScanTypeEnum {
     "decorate",
     "get_metadata"
@@ -33,6 +43,11 @@ let temp_decorations: any = [];
 
 let file_typedefs: TypeDef[] = [];
 let temp_file_typedefs: TypeDef[] = [];
+
+let file_functions: Function[] = [];
+let temp_file_functions: Function[] = [];
+
+
 
 // usually holds a single or multiple code parts nearby the cursor
 let interesting_code_parts: any;
@@ -95,9 +110,17 @@ const data_type_data_arr: any = {
 };
 
 function createScope(code_part: any) {
-    code_part.scope = {
+    const new_scope: any = {
         variables: {}
     };
+
+    if (code_part.scope) {
+        if (code_part.scope.class) {
+            new_scope.class = code_part.scope.class;
+        }
+    }
+
+    code_part.scope = new_scope;
 };
 
 function assignScope(child_code_part: any, code_part: any) {
@@ -392,6 +415,10 @@ function variableAlike(code_part: any) {
 function beforeFunction(code_part: any) {
     const comments = code_part.leadingComments;
 
+    if (!code_part.name || typeof code_part.name.name !== "string") {
+        return;
+    }
+
     if (comments && comments.length > 0) {
         const comment = comments[comments.length - 1];
 
@@ -410,18 +437,40 @@ function beforeFunction(code_part: any) {
                         //console.log(data_type, var_name, code_part.arguments);
                     }
                     code_part.arguments.forEach((arg: any) => {
-                        if (scan_type == ScanTypeEnum.decorate) {
-                            console.log(arg.name.name, var_name, "$" + arg.name.name === var_name);
-                        }
                         if (arg.name && "$" + arg.name.name === var_name) {
                             assignDataType(arg, data_type);
-                            console.log("arg", arg);
                         }
                     })
                 }
             }
         }
     }
+
+    let args: FunctionArgument[] = [];
+
+    code_part.arguments.forEach((arg: any) => {
+        const arg_data: FunctionArgument = {
+            name: arg.name?.name,
+            data_type: arg.data_type
+        }
+        args.push(arg_data);
+    })
+
+    temp_file_functions.push({
+        name: getFunctionName(code_part),
+        args
+    });
+}
+
+function getFunctionName(code_part: any): string {
+    let name = "";
+    if (code_part.scope.class) {
+        name += code_part.scope.class + "::";
+    }
+    if (code_part.name && code_part.name.name) {
+        name += code_part.name.name;
+    }
+    return name;
 }
 
 function functionAlike(code_part: any) {
@@ -546,8 +595,10 @@ function crawlCodePart(code_part: any) {
                 //crawlCodePart(code_part.what);
 
                 let args_data_types: any = [];
-                if (code_part.what.name === "var_dump") {
-                    args_data_types = ["Cat", "number"];
+
+                const function_def: Function = ext.php_functions[code_part.what.name];
+                if (function_def) {
+                    args_data_types = function_def.args.map((arg: FunctionArgument) => arg.data_type);
                 }
 
                 //console.log(code_part.what.name, args_data_types, "XXXXXX");
@@ -586,9 +637,6 @@ function crawlCodePart(code_part: any) {
         case "block":
             {
                 for (const child of code_part.children) {
-                    if (scan_type === ScanTypeEnum.decorate) {
-                        console.log("childxxx", child);
-                    }
                     assignScope(child, code_part);
                     crawlCodePart(child);
                 }
@@ -642,18 +690,13 @@ function crawlCodePart(code_part: any) {
                 variableAlike(code_part);
 
                 let data_type = code_part.data_type;
-                /*console.log("VARariables", code_part.scope.variables,
-                    "data_type", data_type);*/
                 if (data_type) {
                     if (code_part.name) {
-                        //console.log("data_type", data_type);
                         code_part.scope.variables[code_part.name] = data_type;
-                        //console.log("variables", code_part.scope.variables);
                     }
                 }
                 else {
                     data_type = code_part.scope.variables[code_part.name];
-                    //console.log("data_type", data_type);
                     if (data_type) {
                         assignDataType(code_part, data_type);
                     }
@@ -771,7 +814,6 @@ function crawlCodePart(code_part: any) {
 
                     if (what.data_type) {
                         if (what.data_type_data && what.data_type_data.properties) {
-                            //console.log("GIVE PROPERTIES ", what.data_type_data.properties, "TO", offset);
                             offset.possible_properties = what.data_type_data.properties;
 
                             addInterestingCodePart(offset);
@@ -779,7 +821,6 @@ function crawlCodePart(code_part: any) {
                             const offset_value = offset.value;
                             const offset_property = offset.possible_properties[offset_value];
                             if (offset_property) {
-                                //console.log("give offset data type " + offset_property.data_type + ":", offset);
                                 assignDataType(offset, offset_property.data_type);
                             }
                         } else {
@@ -794,7 +835,6 @@ function crawlCodePart(code_part: any) {
 
                     if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
                         if (offset.data_type) {
-                            //console.log("from parent data type " + offset.data_type + ":", offset);
                             //assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
                             assignDataType(offset.parent_code_part, offset.data_type);
                         }
@@ -815,6 +855,10 @@ function crawlCodePart(code_part: any) {
         case "class":
             {
                 createScope(code_part);
+
+                if (code_part.name && code_part.name.name) {
+                    code_part.scope.class = code_part.name.name;
+                }
 
                 const body = code_part.body;
                 for (const body_code_part of body) {
@@ -850,6 +894,8 @@ function cleanupTempVars() {
     temp_decorations = [];
     temp_interesting_code_parts = [];
     temp_file_typedefs = [];
+    temp_file_functions = [];
+
 }
 
 export function getFileMetadata(sourceCode: string): ext.FileData | undefined {
@@ -867,8 +913,9 @@ export function getFileMetadata(sourceCode: string): ext.FileData | undefined {
     }
 
     file_typedefs = temp_file_typedefs;
+    file_functions = temp_file_functions;
 
-    return { typedefs: file_typedefs };
+    return { typedefs: file_typedefs, functions: file_functions };
 }
 
 export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
@@ -901,7 +948,9 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
     const code_decorations = temp_decorations;
     interesting_code_parts = temp_interesting_code_parts;
     file_typedefs = temp_file_typedefs;
+    file_functions = temp_file_functions;
 
+    console.log(file_functions);
     //console.log(file_typedefs);
 
     for (const code_decoration of code_decorations) {
