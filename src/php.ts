@@ -32,6 +32,13 @@ interface FunctionArgument {
     data_type: string
 }
 
+interface Property {
+    data_type: string;
+    name: string;
+    optional?: boolean;
+    description?: string;
+}
+
 enum ScanTypeEnum {
     "decorate",
     "get_metadata"
@@ -65,7 +72,8 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
             //return;
 
             let suggestions: any = [];
-            Object.entries(code_part.possible_properties).forEach(([property_name, property_data]: [any, any]) => {
+            // @ts-ignore
+            Object.entries(code_part.possible_properties).forEach(([property_name, property_data]: [any, Property]) => {
                 const completion_item = new vscode.CompletionItem(property_name, vscode.CompletionItemKind.Property)
                 if (property_data.data_type) {
                     completion_item.detail = property_data.data_type;
@@ -82,32 +90,6 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
 
     return undefined;
 }
-
-const data_type_data_arr: any = {
-    Cat: {
-        type: "object",
-        properties: {
-            age: {
-                data_type: "CatAge",
-                description: "this is the age of a cat"
-            },
-            name: {
-                data_type: "string",
-                optional: true,
-                description: "this is the name of a cat"
-            }
-        }
-    },
-    CatAge: {
-        type: "object",
-        properties: {
-            value: {
-                data_type: "number",
-                description: "actual age value"
-            }
-        }
-    }
-};
 
 function createScope(code_part: any) {
     const new_scope: any = {
@@ -213,7 +195,7 @@ function crawlCodePartComments(comments: any) {
                         });
                     }
 
-                    const match_typedef = line.match(/(?<=@typedef )\w*(?=.*{)/);
+                    const match_typedef = line.match(/(?<=@typedef +)\w*(?=.*{)/);
                     if (match_typedef) {
                         const typedef = match_typedef[0];
 
@@ -283,14 +265,15 @@ function crawlCodePartComments(comments: any) {
                             },
                         });
                     } else {
-                        const match_property = line.match(/\w*: ?\w*/);
+                        const match_property = line.match(/\w*\??: ?\w*/);
                         //console.log(line, match_property);
                         if (match_property) {
                             const [prop_name_full, data_type_full] = match_property[0].split(":");
 
                             const start_column = actual_left + match_property.index;
 
-                            const prop_name = prop_name_full.trim();
+                            const prop_name_optional = prop_name_full.trim();
+                            const prop_name = prop_name_optional.replace(/\?/g, "");
                             const data_type = data_type_full.trim();
 
                             temp_decorations.push({
@@ -302,12 +285,12 @@ function crawlCodePartComments(comments: any) {
                                     },
                                     end: {
                                         line: actual_line,
-                                        column: start_column + prop_name.length,
+                                        column: start_column + prop_name_optional.length,
                                     }
                                 },
                             });
 
-                            const start_column_data_type = start_column + prop_name.length + 1 + data_type_full.indexOf(data_type);
+                            const start_column_data_type = start_column + prop_name_optional.length + 1 + data_type_full.indexOf(data_type);
                             const end_column_data_type = start_column_data_type + data_type.length;
 
                             temp_decorations.push({
@@ -332,6 +315,9 @@ function crawlCodePartComments(comments: any) {
                                 };
                                 if (description) {
                                     data_type_obj.description = description;
+                                }
+                                if (prop_name_optional.endsWith("?")) {
+                                    data_type_obj.optional = true;
                                 }
                                 current_typedef.properties[prop_name] = data_type_obj;
                             }
@@ -972,7 +958,18 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
                 description += `**Wo997 Type:**\n\n${display_type}\n\n`;
             }
             if (data_type_data && data_type_data.properties) {
-                description += Object.entries(data_type_data.properties).map(([prop_name, prop_data]: any) => ` • ${prop_name}: ${prop_data.data_type} ${prop_data.description ? " - " + prop_data.description : ""}`).join("\n\n") + "\n\n";
+                //@ts-ignore
+                description += Object.entries(data_type_data.properties).map(([prop_name, prop_data]: [any, Property]) => {
+                    let display = "";
+                    display += ` • ${prop_name}`;
+                    if (prop_data.optional) {
+                        display += `?`;
+                    }
+                    if (prop_data.description) {
+                        display += ` - ${prop_data.description}`;
+                    }
+                    return display;
+                }).join("\n\n") + "\n\n";
             }
 
             const myContent = new vscode.MarkdownString(description);
