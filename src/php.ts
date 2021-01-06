@@ -294,7 +294,7 @@ function crawlCodePartComments(comments: any) {
 
                             temp_decorations.push({
                                 typedef_data_type: data_type,
-                                range: locNumbersToRange(actual_line, start_column_data_type, actual_line, start_column + end_column_data_type)
+                                range: locNumbersToRange(actual_line, start_column_data_type, actual_line, end_column_data_type)
                             });
 
                             const description = line.substring(end_column_data_type - actual_left).trim();
@@ -684,8 +684,6 @@ function crawlCodePart(code_part: any) {
                                     severity: vscode.DiagnosticSeverity.Warning,
                                     range: locToRange(fake_key.loc)
                                 });
-                                console.log("kurwa!!!!!!!!!!!!!!!!!!!!!!");
-                                //console.trace();
                             }
                         }
                         if (!item.key) {
@@ -1196,7 +1194,6 @@ function updateFileErrors(file_path: string, errors: Array<vscode.Diagnostic>) {
     try {
         ext.phpDiagnosticCollection.set(vscode.Uri.parse(file_path), errors);
     } catch (e) {
-        // ugh, doesn't work for closed files? I have no clue why
-        console.error("Can't show diagnostics in: ", file_path);
+        //console.error("Can't show diagnostics in: ", file_path);
     }
 }
