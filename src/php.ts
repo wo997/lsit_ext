@@ -217,7 +217,7 @@ function crawlCodePartComments(comments: any) {
                 const actual_line = comment.loc.start.line + i;
 
                 if (line.match(/@typedef .*{/,)) {
-                    const match_annotation_type = line.match(/@\w*/);
+                    const match_annotation_type = line.match(/@[^\s]*/);
 
                     if (match_annotation_type) {
                         const annotation_type = match_annotation_type[0];
@@ -230,7 +230,7 @@ function crawlCodePartComments(comments: any) {
                         });
                     }
 
-                    const match_typedef = line.match(/(?<=@typedef +)\w*(?=.*{)/);
+                    const match_typedef = line.match(/(?<=@typedef +)[^\s]*(?=.*{)/);
                     if (match_typedef) {
                         const typedef = match_typedef[0];
 
@@ -273,7 +273,7 @@ function crawlCodePartComments(comments: any) {
                             range: locNumbersToRange(actual_line, start_column, actual_line, start_column + match_end[0].length)
                         });
                     } else {
-                        const match_property = line.match(/\w*\??: ?\w*/);
+                        const match_property = line.match(/[^\s]*\??: ?[^\s]*/);
                         if (match_property) {
                             const [prop_name_full, data_type_full] = match_property[0].split(":");
 
@@ -290,7 +290,6 @@ function crawlCodePartComments(comments: any) {
 
                             const start_column_data_type = start_column + prop_name_optional.length + 1 + data_type_full.indexOf(data_type);
                             const end_column_data_type = start_column_data_type + data_type.length;
-                            console.log(data_type_full, data_type.length);
 
                             temp_decorations.push({
                                 typedef_data_type: data_type,
@@ -329,7 +328,7 @@ function variableAlike(code_part: any) {
 
         if (comment.kind === "commentblock") {
             if (comment.value.match(/@type .*{.*}/)) {
-                const match_annotation_type = comment.value.match(/@\w*/);
+                const match_annotation_type = comment.value.match(/@[^\s]*/);
                 if (match_annotation_type) {
                     const annotation_type = match_annotation_type[0];
 
@@ -390,13 +389,13 @@ function beforeFunction(code_part: any) {
                 const actual_left = i === 0 ? comment.loc.start.column : 0;
                 const actual_line = comment.loc.start.line + i;
 
-                const match_line = line.match(/@(param|return) +\w* +\$.+/);
+                const match_line = line.match(/@(param|return) +[^\s]* +\$.+/);
                 if (match_line) {
                     const [param_ann, data_type, var_name] = match_line[0].replace(/ +/, " ").split(" ");
 
                     const type = line.match(/@param/) ? "param" : "return";
 
-                    const match_param = line.match(/\$[^ ]+/);
+                    const match_param = line.match(/\$[^\s]+/);
 
                     if (match_param) {
                         const param = match_param[0];
@@ -599,6 +598,10 @@ function crawlCodePart(code_part: any) {
 
                 let argument_index = -1;
                 for (const arg of code_part.arguments) {
+                    if (!arg) {
+                        continue;
+                    }
+
                     argument_index++;
 
                     const arg_func_def = function_def ? function_def.args[argument_index] : null;
@@ -607,10 +610,7 @@ function crawlCodePart(code_part: any) {
 
                     if (arg_func_def) {
                         const data_type = arg_func_def.data_type;
-                        const data_type_data = ext.php_type_defs[data_type];
-                        if (data_type_data) {
-                            assignDataType(arg, data_type);
-                        }
+                        assignDataType(arg, data_type);
                     }
 
                     crawlCodePart(arg);
@@ -666,9 +666,22 @@ function crawlCodePart(code_part: any) {
             {
                 const data_type = code_part.data_type;
                 const data_type_data = code_part.data_type_data;
-                if (data_type_data && data_type_data.properties) {
-                    assignDataType(code_part, data_type);
 
+                for (const item of code_part.items) {
+                    assignScope(item, code_part);
+                }
+
+                const child_data_type = ArrayDataTypeToSingle(data_type);
+
+                if (child_data_type) {
+                    for (const item of code_part.items) {
+                        if (item.value) {
+                            assignDataType(item.value, child_data_type);
+                        }
+                    }
+                }
+
+                if (data_type_data && data_type_data.properties) {
                     let missing_props: any = util.cloneObject(data_type_data.properties);
 
                     for (const item of code_part.items) {
@@ -710,8 +723,6 @@ function crawlCodePart(code_part: any) {
                                 assignDataType(item.value, sub_data_type_data.data_type);
                             }
                         }
-
-                        crawlCodePart(item);
                     }
 
                     let missing_names: any = [];
@@ -719,17 +730,21 @@ function crawlCodePart(code_part: any) {
                     // @ts-ignore
                     Object.entries(missing_props).forEach(([prop_name, prop_data]: [any, Property]) => {
                         if (!prop_data.optional) {
-                            missing_names.push(` • ${prop_name}\n\n`);
+                            missing_names.push(` • ${prop_name}\n`);
                         }
                     });
 
                     if (missing_names.length > 0) {
                         temp_errors.push({
-                            message: `Missing keys:\n\n${missing_names.join("")}`,
+                            message: `Missing keys:\n${missing_names.join("")}`,
                             severity: vscode.DiagnosticSeverity.Error,
                             range: locToRange(code_part.loc)
                         });
                     }
+                }
+
+                for (const item of code_part.items) {
+                    crawlCodePart(item);
                 }
             }
             break;
@@ -867,11 +882,13 @@ function crawlCodePart(code_part: any) {
                     }
                 } else {
                     const expression = code_part.expression;
-                    assignScope(expression, code_part);
+                    if (expression) {
+                        assignScope(expression, code_part);
 
-                    expression.leadingComments = code_part.leadingComments;
-                    variableAlike(expression);
-                    crawlCodePart(expression);
+                        expression.leadingComments = code_part.leadingComments;
+                        variableAlike(expression);
+                        crawlCodePart(expression);
+                    }
                 }
             }
             break;
