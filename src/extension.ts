@@ -8,6 +8,8 @@ import * as util from "./util";
 
 const window = vscode.window;
 
+export let phpDiagnosticCollection: vscode.DiagnosticCollection;
+
 export interface FileData {
     typedefs?: php.TypeDef[]
     functions?: php.Function[]
@@ -63,10 +65,10 @@ export const decorate_annotation_data_type = vscode.window.createTextEditorDecor
     color: '#3ac9a3'
 });
 
-export const decorate_error = vscode.window.createTextEditorDecorationType({
-    /*textDecoration: "underline red",*/
-    backgroundColor: '#f003'
-});
+// export const decorate_error = vscode.window.createTextEditorDecorationType({
+//     /*textDecoration: "underline red",*/
+//     backgroundColor: '#f003'
+// });
 
 export const decorate_typedef_property_name = vscode.window.createTextEditorDecorationType({
     color: '#999'
@@ -137,6 +139,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    context.subscriptions.push(disposable);
+
+
     const provideCompletionItems = (document: vscode.TextDocument, position: vscode.Position) => {
         const linePrefix = document.lineAt(position).text.substr(0, position.character);
 
@@ -157,7 +162,10 @@ export function activate(context: vscode.ExtensionContext) {
         `'`
     );
 
-    context.subscriptions.push(provider, disposable);
+    context.subscriptions.push(provider);
+
+    phpDiagnosticCollection = vscode.languages.createDiagnosticCollection('php');
+    context.subscriptions.push(phpDiagnosticCollection);
 
     if (vscode.window.activeTextEditor) {
         decorateActiveEditor(vscode.window.activeTextEditor.document.uri);
@@ -170,7 +178,7 @@ function updateFile(file_path: string) {
         const sourceCode = fs.readFileSync(file_path, "utf-8");
 
         if (file_path.endsWith(".php")) {
-            const file_data = php.getFileMetadata(sourceCode);
+            const file_data = php.getFileMetadata(sourceCode, file_path);
             if (file_data && (file_data.typedefs?.length || file_data.functions?.length)) {
                 files_data[file_path] = file_data;
                 //console.log("============ " + file_path, file_data);
@@ -317,12 +325,12 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     const document = editor.document;
 
-    IS_JS = document.uri.path.endsWith(".js");
-    IS_PHP = document.uri.path.endsWith(".php");
+    IS_JS = uri.path.endsWith(".js");
+    IS_PHP = uri.path.endsWith(".php");
 
     const sourceCode = document.getText();
 
-    let exclude_decorations: vscode.DecorationOptions[] = [];
+    //let exclude_decorations: vscode.DecorationOptions[] = [];
 
     //const sourceCodeArr = sourceCode.split('\n');
 
@@ -330,7 +338,7 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     if (visibleRanges && visibleRanges[0]) {
         if (IS_PHP) {
-            php.decorateFile(sourceCode, editor);
+            php.decorateFile(sourceCode, editor, uri.path);
         }
         if (IS_JS) {
             //js.scanFile(editor, sourceCode);

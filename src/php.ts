@@ -42,6 +42,18 @@ interface Property {
     description?: string;
 }
 
+interface Decoration extends vscode.DecorationOptions {
+    annotation?: string,
+    annotation_data_type?: string,
+    typedef_property_name?: string,
+    modifier?: string
+    typedef_data_type?: string,
+    param?: string,
+    curly_brace?: boolean,
+    data_type?: string
+    data_type_data?: any
+}
+
 enum ScanTypeEnum {
     "decorate",
     "get_metadata"
@@ -49,7 +61,8 @@ enum ScanTypeEnum {
 
 let scan_type: ScanTypeEnum = ScanTypeEnum.decorate;
 
-let temp_decorations: any = [];
+let temp_errors: Array<vscode.Diagnostic> = [];
+let temp_decorations: Array<Decoration> = [];
 
 let file_typedefs: TypeDef[] = [];
 let temp_file_typedefs: TypeDef[] = [];
@@ -65,26 +78,51 @@ let temp_interesting_code_parts: any;
 
 function log(...vars: any) {
     if (scan_type == ScanTypeEnum.decorate) {
-        console.log(vars);
+        console.log(...vars);
     }
+}
+
+function locToRange(loc: any) {
+    return new vscode.Range(
+        new vscode.Position(loc.start.line - 1, loc.start.column),
+        new vscode.Position(loc.end.line - 1, loc.end.column),
+    );
+}
+function locNumbersToRange(l1: number, c1: number, l2: number, c2: number) {
+    return new vscode.Range(
+        new vscode.Position(l1 - 1, c1),
+        new vscode.Position(l2 - 1, c2),
+    );
 }
 
 export function getCompletionItems(document: vscode.TextDocument, position: vscode.Position, linePrefix: string): vscode.CompletionItem[] | undefined {
     for (const code_part of interesting_code_parts) {
         // what's funny, we did the exact same check before that item was even added ;)
         if (code_part.kind === "string" && code_part.possible_properties && code_part.loc.start.line - 1 === position.line && code_part.loc.start.column <= position.character && code_part.loc.end.column >= position.character) {
-
             let suggestions: any = [];
             // @ts-ignore
-            Object.entries(code_part.possible_properties).forEach(([property_name, property_data]: [any, Property]) => {
-                const completion_item = new vscode.CompletionItem(property_name, vscode.CompletionItemKind.Property)
-                if (property_data.data_type) {
-                    completion_item.detail = property_data.data_type;
+            Object.entries(code_part.possible_properties).forEach(([prop_name, prop_data]: [any, Property]) => {
+                let display_name = "";
+                display_name += prop_name;
+                if (prop_data.optional) {
+                    display_name += "?";
                 }
 
-                if (property_data.description) {
-                    completion_item.documentation = property_data.description;
+                const completion_item = new vscode.CompletionItem(display_name, vscode.CompletionItemKind.Property);
+                completion_item.insertText = prop_name;
+
+                if (prop_data.data_type) {
+                    completion_item.detail = prop_data.data_type;
                 }
+
+                let description = "";
+                if (prop_data.description) {
+                    description += prop_data.description + " ";
+                }
+                if (description) {
+                    completion_item.documentation = description;
+                }
+
                 suggestions.push(completion_item);
             });
             return suggestions;
@@ -112,7 +150,6 @@ function assignScope(child_code_part: any, code_part: any) {
     child_code_part.scope = code_part.scope;
     child_code_part.parent_code_part = code_part;
     child_code_part.level = code_part.level + 1;
-    //child_code_part.buffer = cloneObject(code_part.buffer);
 };
 
 
@@ -157,6 +194,11 @@ function addInterestingCodePart(code_part: any) {
 function isCursorInCodePart(code_part: any) {
     const selection = vscode.window.activeTextEditor?.selection;
     return selection
+        && code_part
+        && code_part.loc
+        && code_part.loc.start
+        && code_part.loc.end
+
         && code_part.loc.start.line - 1 === selection.start.line
         && code_part.loc.start.column <= selection.start.character
         && code_part.loc.end.column >= selection.start.character;
@@ -184,16 +226,7 @@ function crawlCodePartComments(comments: any) {
 
                         temp_decorations.push({
                             annotation: annotation_type,
-                            loc: {
-                                start: {
-                                    line: actual_line,
-                                    column: start_column,
-                                },
-                                end: {
-                                    line: actual_line,
-                                    column: start_column + annotation_type.length,
-                                }
-                            },
+                            range: locNumbersToRange(actual_line, start_column, actual_line, start_column + annotation_type.length)
                         });
                     }
 
@@ -210,16 +243,7 @@ function crawlCodePartComments(comments: any) {
 
                         temp_decorations.push({
                             annotation_data_type: typedef,
-                            loc: {
-                                start: {
-                                    line: actual_line,
-                                    column: start_column,
-                                },
-                                end: {
-                                    line: actual_line,
-                                    column: start_column + typedef.length,
-                                }
-                            },
+                            range: locNumbersToRange(actual_line, start_column, actual_line, start_column + typedef.length)
                         });
                     }
 
@@ -229,16 +253,7 @@ function crawlCodePartComments(comments: any) {
 
                         temp_decorations.push({
                             curly_brace: true,
-                            loc: {
-                                start: {
-                                    line: actual_line,
-                                    column: start_column,
-                                },
-                                end: {
-                                    line: actual_line,
-                                    column: start_column + match_start[0].length,
-                                }
-                            },
+                            range: locNumbersToRange(actual_line, start_column, actual_line, start_column + match_start[0].length)
                         });
                     }
                 }
@@ -255,16 +270,7 @@ function crawlCodePartComments(comments: any) {
 
                         temp_decorations.push({
                             curly_brace: true,
-                            loc: {
-                                start: {
-                                    line: actual_line,
-                                    column: start_column,
-                                },
-                                end: {
-                                    line: actual_line,
-                                    column: start_column + match_end[0].length,
-                                }
-                            },
+                            range: locNumbersToRange(actual_line, start_column, actual_line, start_column + match_end[0].length)
                         });
                     } else {
                         const match_property = line.match(/\w*\??: ?\w*/);
@@ -279,16 +285,7 @@ function crawlCodePartComments(comments: any) {
 
                             temp_decorations.push({
                                 typedef_property_name: prop_name,
-                                loc: {
-                                    start: {
-                                        line: actual_line,
-                                        column: start_column,
-                                    },
-                                    end: {
-                                        line: actual_line,
-                                        column: start_column + prop_name_optional.length,
-                                    }
-                                },
+                                range: locNumbersToRange(actual_line, start_column, actual_line, start_column + prop_name_optional.length)
                             });
 
                             const start_column_data_type = start_column + prop_name_optional.length + 1 + data_type_full.indexOf(data_type);
@@ -296,16 +293,7 @@ function crawlCodePartComments(comments: any) {
 
                             temp_decorations.push({
                                 typedef_data_type: data_type,
-                                loc: {
-                                    start: {
-                                        line: actual_line,
-                                        column: start_column_data_type,
-                                    },
-                                    end: {
-                                        line: actual_line,
-                                        column: end_column_data_type,
-                                    }
-                                },
+                                range: locNumbersToRange(actual_line, start_column_data_type, actual_line, start_column + end_column_data_type)
                             });
 
                             const description = line.substring(end_column_data_type - actual_left).trim();
@@ -348,16 +336,7 @@ function variableAlike(code_part: any) {
 
                     temp_decorations.push({
                         annotation: annotation_type,
-                        loc: {
-                            start: {
-                                line: comment.loc.start.line,
-                                column: start_column,
-                            },
-                            end: {
-                                line: comment.loc.start.line,
-                                column: start_column + annotation_type.length,
-                            }
-                        },
+                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + start_column + annotation_type.length)
                     });
                 }
 
@@ -370,16 +349,7 @@ function variableAlike(code_part: any) {
 
                     temp_decorations.push({
                         annotation_data_type: annotation_data_type,
-                        loc: {
-                            start: {
-                                line: comment.loc.start.line,
-                                column: start_column,
-                            },
-                            end: {
-                                line: comment.loc.start.line,
-                                column: start_column + data_type.length,
-                            }
-                        },
+                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + start_column + data_type.length)
                     });
                 }
             }
@@ -435,16 +405,7 @@ function beforeFunction(code_part: any) {
 
                             temp_decorations.push({
                                 param: param,
-                                loc: {
-                                    start: {
-                                        line: actual_line,
-                                        column: start_column,
-                                    },
-                                    end: {
-                                        line: actual_line,
-                                        column: start_column + param.length,
-                                    }
-                                },
+                                range: locNumbersToRange(actual_line, start_column, actual_line, start_column + param.length)
                             });
                         }
                     }
@@ -462,16 +423,7 @@ function beforeFunction(code_part: any) {
 
                                 temp_decorations.push({
                                     modifier,
-                                    loc: {
-                                        start: {
-                                            line: actual_line,
-                                            column: start_column,
-                                        },
-                                        end: {
-                                            line: actual_line,
-                                            column: start_column + modifier.length,
-                                        }
-                                    },
+                                    range: locNumbersToRange(actual_line, start_column, actual_line, start_column + modifier.length)
                                 });
                             }
                         }
@@ -557,42 +509,46 @@ function ArrayDataTypeToSingle(data_type: string) {
     return null;
 }
 
+function isLocInVisibleRange(loc: any) {
+    if (!loc
+        || !loc.start
+        || !loc.end
+        || !ext.visibleRanges
+        || !ext.visibleRanges[0]) {
+        return false;
+    }
+    const visibleRange = ext.visibleRanges[0];
+
+    if (visibleRange.start === null || visibleRange.end === null) {
+        return false;
+    }
+
+    //const cx0 = code_part.loc.start.column;
+    const cy0 = loc.start.line - 1;
+    //const cx1 = code_part.loc.end.column;
+    const cy1 = loc.end.line - 1;
+    //const vx0 = visibleRange.start.character;
+    const vy0 = visibleRange.start.line;
+    //const vx1 = visibleRange.endcharacter;
+    const vy1 = visibleRange.end.line;
+
+    if (cy0 <= vy1 && cy1 >= vy0) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
 function crawlCodePart(code_part: any) {
-    /*if (!code_part.buffer) {
-        code_part.buffer = {};
-    }*/
     if (!code_part.level) {
         code_part.level = 0;
     }
 
-    if (scan_type == ScanTypeEnum.decorate) {
-        if (!ext.visibleRanges) {
-            return;
-        }
-        const visibleRange = ext.visibleRanges[0];
-
-        if (visibleRange.start === null || visibleRange.end === null) {
-            return;
-        }
-
-        // editing? show just the part we can see, eeeeezy
-        if (ext.textChangeEventTimeout && code_part.loc) {
-            //const cx0 = code_part.loc.start.column;
-            const cy0 = code_part.loc.start.line - 1;
-            //const cx1 = code_part.loc.end.column;
-            const cy1 = code_part.loc.end.line - 1;
-            //const vx0 = visibleRange.start.character;
-            const vy0 = visibleRange.start.line;
-            //const vx1 = visibleRange.endcharacter;
-            const vy1 = visibleRange.end.line;
-
-            if (cy0 <= vy1 && cy1 >= vy0) {
-                // inside
-            }
-            else {
-                return;
-            }
-        }
+    if (scan_type == ScanTypeEnum.decorate
+        && ext.textChangeEventTimeout
+        && !isLocInVisibleRange(code_part.loc)) {
+        return;
     }
 
     let comments: any = [];
@@ -712,11 +668,36 @@ function crawlCodePart(code_part: any) {
                 if (data_type_data && data_type_data.properties) {
                     assignDataType(code_part, data_type);
 
+                    let missing_props: any = util.cloneObject(data_type_data.properties);
+
                     for (const item of code_part.items) {
                         const fake_key = item.key ? item.key : item.value;
                         if (fake_key.kind == "string") {
-                            fake_key.possible_properties = data_type_data.properties;
+                            if (missing_props[fake_key.value]) {
+                                delete missing_props[fake_key.value];
+                            }
+                            else {
+                                const in_what = util.probablyJSON(data_type) ? "" : ` in ${data_type}}`;
+                                temp_errors.push({
+                                    message: `${fake_key.value} not found${in_what}`,
+                                    severity: vscode.DiagnosticSeverity.Warning,
+                                    range: locToRange(fake_key.loc)
+                                });
+                            }
+                        }
+                        if (!item.key) {
+                            temp_errors.push({
+                                message: `Expected a key-value pair`,
+                                severity: vscode.DiagnosticSeverity.Error,
+                                range: locToRange(fake_key.loc)
+                            });
+                        }
+                    }
 
+                    for (const item of code_part.items) {
+                        const fake_key = item.key ? item.key : item.value;
+                        if (fake_key.kind == "string") {
+                            fake_key.possible_properties = missing_props;
                             addInterestingCodePart(fake_key);
                         }
 
@@ -731,6 +712,23 @@ function crawlCodePart(code_part: any) {
 
                         crawlCodePart(item);
                     }
+
+                    let missing_names: any = [];
+
+                    // @ts-ignore
+                    Object.entries(missing_props).forEach(([prop_name, prop_data]: [any, Property]) => {
+                        if (!prop_data.optional) {
+                            missing_names.push(` • ${prop_name}\n\n`);
+                        }
+                    });
+
+                    if (missing_names.length > 0) {
+                        temp_errors.push({
+                            message: `Missing keys:\n\n${missing_names.join("")}`,
+                            severity: vscode.DiagnosticSeverity.Error,
+                            range: locToRange(code_part.loc)
+                        });
+                    }
                 }
             }
             break;
@@ -739,8 +737,10 @@ function crawlCodePart(code_part: any) {
                 const key = code_part.key;
                 const value = code_part.value;
 
-                assignScope(value, code_part)
-                crawlCodePart(value);
+                if (value) {
+                    assignScope(value, code_part)
+                    crawlCodePart(value);
+                }
 
                 if (key) {
                     assignScope(key, code_part)
@@ -794,10 +794,19 @@ function crawlCodePart(code_part: any) {
             {
                 const left = code_part.left;
                 const right = code_part.right;
-                assignScope(left, code_part);
-                assignScope(right, code_part);
-                crawlCodePart(left);
-                crawlCodePart(right);
+
+                if (left) {
+                    assignScope(left, code_part);
+                }
+                if (right) {
+                    assignScope(right, code_part);
+                }
+                if (left) {
+                    crawlCodePart(left);
+                }
+                if (right) {
+                    crawlCodePart(right);
+                }
             }
             break;
         case "echo":
@@ -849,10 +858,10 @@ function crawlCodePart(code_part: any) {
                     crawlCodePart(left);
 
                     if (left.data_type && right.data_type && left.data_type != right.data_type) {
-                        //console.error("Wrong assignment :P");
-                        temp_decorations.push({
-                            error: `Cannot assign **${right.data_type}** to **${left.data_type}**!`,
-                            loc: code_part.expression.loc
+                        temp_errors.push({
+                            message: `Cannot assign **${right.data_type}** to **${left.data_type}**!`,
+                            severity: vscode.DiagnosticSeverity.Warning,
+                            range: locToRange(code_part.expression.loc)
                         });
                     }
                 } else {
@@ -948,20 +957,20 @@ function crawlCodePart(code_part: any) {
         temp_decorations.push({
             data_type: code_part.data_type,
             data_type_data: code_part.data_type_data,
-            loc: code_part.loc,
+            range: locToRange(code_part.loc)
         });
     }
 }
 
 function cleanupTempVars() {
+    temp_errors = [];
     temp_decorations = [];
     temp_interesting_code_parts = [];
     temp_file_typedefs = [];
     temp_file_functions = [];
-
 }
 
-export function getFileMetadata(sourceCode: string): ext.FileData | undefined {
+export function getFileMetadata(sourceCode: string, file_path: string): ext.FileData | undefined {
     scan_type = ScanTypeEnum.get_metadata;
 
     cleanupTempVars();
@@ -978,27 +987,29 @@ export function getFileMetadata(sourceCode: string): ext.FileData | undefined {
     file_typedefs = temp_file_typedefs;
     file_functions = temp_file_functions;
 
+    updateFileErrors(file_path, temp_errors);
+
     return { typedefs: file_typedefs, functions: file_functions };
 }
 
-export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
+export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file_path: string) {
     scan_type = ScanTypeEnum.decorate;
 
     let entity_decorations: vscode.DecorationOptions[] = [];
     let annotation_type_decorations: vscode.DecorationOptions[] = [];
     let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
-    let error_decorations: vscode.DecorationOptions[] = [];
+    //let error_decorations: vscode.DecorationOptions[] = [];
     let typedef_property_name_decorations: vscode.DecorationOptions[] = [];
     let typedef_data_type_decorations: vscode.DecorationOptions[] = [];
     let curly_braces_decorations: vscode.DecorationOptions[] = [];
     let param_decorations: vscode.DecorationOptions[] = [];
     let modifier_decorations: vscode.DecorationOptions[] = [];
 
+    cleanupTempVars();
+
     const d0 = new Date();
     const php_parsed = php_parser.parseCode(sourceCode);
     console.log("Parse AST time: " + ((new Date()).getTime() - d0.getTime()).toString());
-
-    cleanupTempVars();
 
     const d = new Date();
     try {
@@ -1020,12 +1031,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
     //console.log(code_decorations);
 
     for (const code_decoration of code_decorations) {
-        const loc = code_decoration.loc;
-
-        let range = new vscode.Range(
-            new vscode.Position(loc.start.line - 1, loc.start.column),
-            new vscode.Position(loc.end.line - 1, loc.end.column),
-        );
+        const range = code_decoration.range;
 
         let description = "";
 
@@ -1035,10 +1041,10 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
 
             const display_type = util.probablyJSON(data_type) ? "custom" : data_type;
             if (display_type) {
-                description += `**Wo997 Type:**\n\n${display_type}\n\n`;
+                description += `${display_type}\n\n`;
             }
             if (data_type_data && data_type_data.properties) {
-                //@ts-ignore
+                // @ts-ignore
                 description += Object.entries(data_type_data.properties).map(([prop_name, prop_data]: [any, Property]) => {
                     let display = "";
                     display += ` • ${prop_name}`;
@@ -1062,7 +1068,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
         else if (code_decoration.annotation) {
             const annotation = code_decoration.annotation;
 
-            description += `**Wo997 Annotation:**\n\n${annotation}\n\n`;
+            description += `${annotation}\n\n`;
 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
@@ -1074,7 +1080,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
         else if (code_decoration.annotation_data_type) {
             const annotation_data_type = code_decoration.annotation_data_type;
 
-            description += `**Wo997 Annotation data type:**\n\n${annotation_data_type}\n\n`;
+            description += `${annotation_data_type}\n\n`;
 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
@@ -1083,7 +1089,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
 
             annotation_data_type_decorations.push(decoration);
         }
-        else if (code_decoration.error) {
+        /*else if (code_decoration.error) {
             const error = code_decoration.error;
 
             description += `**Wo997 Error:**\n\n${error}\n\n`;
@@ -1094,11 +1100,11 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
 
             error_decorations.push(decoration);
-        }
+        }*/
         else if (code_decoration.typedef_property_name) {
             const typedef_property_name = code_decoration.typedef_property_name;
 
-            description += `**Wo997 Anotation property name:**\n\n${typedef_property_name}\n\n`;
+            description += `${typedef_property_name}\n\n`;
 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
@@ -1110,7 +1116,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
         else if (code_decoration.typedef_data_type) {
             const typedef_data_type = code_decoration.typedef_data_type;
 
-            description += `**Wo997 Typedef data type:**\n\n${typedef_data_type}\n\n`;
+            description += `${typedef_data_type}\n\n`;
 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
@@ -1133,10 +1139,12 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
         }
     }
 
+    updateFileErrors(file_path, temp_errors);
+
+    //editor.setDecorations(ext.decorate_error, error_decorations);
     editor.setDecorations(ext.decorate_entity, entity_decorations);
     editor.setDecorations(ext.decorate_annotation_type, annotation_type_decorations);
     editor.setDecorations(ext.decorate_annotation_data_type, annotation_data_type_decorations);
-    editor.setDecorations(ext.decorate_error, error_decorations);
     editor.setDecorations(ext.decorate_typedef_property_name, typedef_property_name_decorations);
     editor.setDecorations(ext.decorate_typedef_data_type, typedef_data_type_decorations);
     editor.setDecorations(ext.decorate_curly_braces, curly_braces_decorations);
@@ -1179,4 +1187,18 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor) {
     }
 
     editor.setDecorations(ext.decorate_wo997_annotation, wo997_annotation_decorations);
+}
+
+function updateFileErrors(file_path: string, errors: Array<vscode.Diagnostic>) {
+    if (file_path !== vscode.window.activeTextEditor?.document.uri.path) {
+        //console.log("XXX", file_path, errors);
+        return;
+    } else {
+        //console.log("UUU", file_path, errors);
+    }
+    //errors = util.cloneObject(errors);
+    /*if (errors.length) {
+        console.log(errors);
+    }*/
+    ext.phpDiagnosticCollection.set(vscode.Uri.parse(file_path), errors);
 }
