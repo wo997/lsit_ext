@@ -290,6 +290,7 @@ function crawlCodePartComments(comments: any) {
 
                             const start_column_data_type = start_column + prop_name_optional.length + 1 + data_type_full.indexOf(data_type);
                             const end_column_data_type = start_column_data_type + data_type.length;
+                            console.log(data_type_full, data_type.length);
 
                             temp_decorations.push({
                                 typedef_data_type: data_type,
@@ -683,6 +684,8 @@ function crawlCodePart(code_part: any) {
                                     severity: vscode.DiagnosticSeverity.Warning,
                                     range: locToRange(fake_key.loc)
                                 });
+                                console.log("kurwa!!!!!!!!!!!!!!!!!!!!!!");
+                                //console.trace();
                             }
                         }
                         if (!item.key) {
@@ -995,16 +998,6 @@ export function getFileMetadata(sourceCode: string, file_path: string): ext.File
 export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file_path: string) {
     scan_type = ScanTypeEnum.decorate;
 
-    let entity_decorations: vscode.DecorationOptions[] = [];
-    let annotation_type_decorations: vscode.DecorationOptions[] = [];
-    let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
-    //let error_decorations: vscode.DecorationOptions[] = [];
-    let typedef_property_name_decorations: vscode.DecorationOptions[] = [];
-    let typedef_data_type_decorations: vscode.DecorationOptions[] = [];
-    let curly_braces_decorations: vscode.DecorationOptions[] = [];
-    let param_decorations: vscode.DecorationOptions[] = [];
-    let modifier_decorations: vscode.DecorationOptions[] = [];
-
     cleanupTempVars();
 
     const d0 = new Date();
@@ -1029,6 +1022,16 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     //console.log(file_functions);
     //console.log(file_typedefs);
     //console.log(code_decorations);
+
+    let entity_decorations: vscode.DecorationOptions[] = [];
+    let annotation_type_decorations: vscode.DecorationOptions[] = [];
+    let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
+    //let error_decorations: vscode.DecorationOptions[] = [];
+    let typedef_property_name_decorations: vscode.DecorationOptions[] = [];
+    let typedef_data_type_decorations: vscode.DecorationOptions[] = [];
+    let curly_braces_decorations: vscode.DecorationOptions[] = [];
+    let param_decorations: vscode.DecorationOptions[] = [];
+    let modifier_decorations: vscode.DecorationOptions[] = [];
 
     for (const code_decoration of code_decorations) {
         const range = code_decoration.range;
@@ -1190,15 +1193,10 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
 }
 
 function updateFileErrors(file_path: string, errors: Array<vscode.Diagnostic>) {
-    if (file_path !== vscode.window.activeTextEditor?.document.uri.path) {
-        //console.log("XXX", file_path, errors);
-        return;
-    } else {
-        //console.log("UUU", file_path, errors);
+    try {
+        ext.phpDiagnosticCollection.set(vscode.Uri.parse(file_path), errors);
+    } catch (e) {
+        // ugh, doesn't work for closed files? I have no clue why
+        console.error("Can't show diagnostics in: ", file_path);
     }
-    //errors = util.cloneObject(errors);
-    /*if (errors.length) {
-        console.log(errors);
-    }*/
-    ext.phpDiagnosticCollection.set(vscode.Uri.parse(file_path), errors);
 }

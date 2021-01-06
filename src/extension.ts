@@ -97,8 +97,6 @@ export function activate(context: vscode.ExtensionContext) {
         workspace_path = vscode.workspace.workspaceFolders[0].uri.path;
     }
 
-    indexFiles();
-
     watchFiles();
 
     initSyntaxDecorator();
@@ -170,12 +168,20 @@ export function activate(context: vscode.ExtensionContext) {
     if (vscode.window.activeTextEditor) {
         decorateActiveEditor(vscode.window.activeTextEditor.document.uri);
     }
+
+    // needs to run twice, read defs, then find errors
+    // phpDiagnosticCollection must be instantiated
+    indexFiles();
+    indexFiles();
+}
+
+function getFileData(file_path: string) {
+    return fs.readFileSync(filePathClean(file_path), "utf-8");
 }
 
 function updateFile(file_path: string) {
     try {
-        file_path = filePathClean(file_path);
-        const sourceCode = fs.readFileSync(file_path, "utf-8");
+        const sourceCode = getFileData(file_path);
 
         if (file_path.endsWith(".php")) {
             const file_data = php.getFileMetadata(sourceCode, file_path);
@@ -207,11 +213,11 @@ function indexFiles() {
         return null;
     }
 
-    const project_root: fs.PathLike = filePathClean(vscode.workspace.workspaceFolders[0].uri.path);
+    const project_root: fs.PathLike = vscode.workspace.workspaceFolders[0].uri.path;
 
     const scanFilesInDir: any = (dir: string) => {
         let entity_data_files_sub: any = {};
-        fs.readdirSync(dir, { withFileTypes: true }).forEach(file => {
+        fs.readdirSync(filePathClean(dir), { withFileTypes: true }).forEach(file => {
             const file_path = `${dir}/${file.name}`;
 
             if (file.isDirectory()) {
@@ -274,12 +280,11 @@ function watchFiles() {
     const watcher: vscode.FileSystemWatcher = vscode.workspace.createFileSystemWatcher("**/*.php"); //glob search string
 
     const anyFilechange = (uri: vscode.Uri) => {
-        const file_path = filePathClean(uri.path);
-        updateFile(file_path);
+        updateFile(uri.path);
 
         filesUpdated();
 
-        vscode.window.showInformationMessage("LSIT indexed changes in " + file_path);
+        vscode.window.showInformationMessage("LSIT indexed changes in " + uri.path);
     }
     watcher.onDidCreate(anyFilechange);
     watcher.onDidChange(anyFilechange);
