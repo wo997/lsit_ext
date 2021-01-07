@@ -389,11 +389,9 @@ function beforeFunction(code_part: any) {
                 const actual_left = i === 0 ? comment.loc.start.column : 0;
                 const actual_line = comment.loc.start.line + i;
 
-                const match_line = line.match(/@(param|return) +[^\s]* +\$.+/);
-                if (match_line) {
-                    const [param_ann, data_type, var_name] = match_line[0].replace(/ +/, " ").split(" ");
-
-                    const type = line.match(/@param/) ? "param" : "return";
+                const match_param_line = line.match(/@param +[^\s]* +\$.+/);
+                if (match_param_line) {
+                    const [param_ann, data_type, var_name] = match_param_line[0].replace(/ +/, " ").split(" ");
 
                     const match_param = line.match(/\$[^\s]+/);
 
@@ -429,18 +427,40 @@ function beforeFunction(code_part: any) {
                         }
                     }
 
-                    if (type == "param") {
-                        code_part.arguments.forEach((arg: any) => {
-                            if (arg.name && "$" + arg.name.name === var_name) {
-                                assignDataType(arg, data_type);
-                                assignModifiers(arg, modifiers);
+                    code_part.arguments.forEach((arg: any) => {
+                        if (arg.name && "$" + arg.name.name === var_name) {
+                            assignDataType(arg, data_type);
+                            assignModifiers(arg, modifiers);
+                        }
+                    })
+
+                }
+
+                const match_return_line = line.match(/@return +[^\s]*.+/);
+                if (match_return_line) {
+                    const [param_ann, data_type] = match_return_line[0].replace(/ +/, " ").split(" ");
+
+                    let modifiers: Array<any> = [];
+                    const match_modifiers = [...line.matchAll(/\!.+/g)];
+
+                    if (match_modifiers) {
+                        for (const match_modifier of match_modifiers) {
+                            const modifier = match_modifier[0];
+                            modifiers.push(modifier.substr(1));
+
+                            if (scan_type == ScanTypeEnum.decorate) {
+                                const start_column = actual_left + match_modifier.index;
+
+                                temp_decorations.push({
+                                    modifier,
+                                    range: locNumbersToRange(actual_line, start_column, actual_line, start_column + modifier.length)
+                                });
                             }
-                        })
+                        }
                     }
-                    else if (type == "return") {
-                        return_data_type = data_type;
-                        return_modifiers = modifiers;
-                    }
+
+                    return_data_type = data_type;
+                    return_modifiers = modifiers;
                 }
             }
         }
@@ -596,6 +616,14 @@ function crawlCodePart(code_part: any) {
 
                 const function_def: Function = ext.php_functions[code_part.what.name];
 
+                let return_data_type = "";
+                let return_modifiers: String[] | undefined = [];
+
+                if (function_def) {
+                    return_data_type = function_def.return_data_type;
+                    return_modifiers = function_def.return_modifiers;
+                }
+
                 let argument_index = -1;
                 for (const arg of code_part.arguments) {
                     if (!arg) {
@@ -628,29 +656,19 @@ function crawlCodePart(code_part: any) {
                                 properties: properties
                             });
 
-                            const return_data_type = function_def.return_data_type;
-                            const return_modifiers = function_def.return_modifiers;
-                            if (return_data_type) {
-                                let data_type = null;
-                                if (return_modifiers) {
-                                    const SQL_selected = return_modifiers.find(e => e.startsWith("SQL_selected"));
-                                    if (SQL_selected) {
-                                        sql_data_type += "[]".repeat((SQL_selected.replace(/[^\[\]]/g, "").length / 2));
-                                        data_type = sql_data_type;
-                                    }
-                                }
-
-                                // basically any default data type
-                                if (!data_type && return_data_type) {
-                                    data_type = return_data_type;
-                                }
-
-                                if (data_type) {
-                                    assignDataType(code_part, data_type);
+                            if (return_modifiers) {
+                                const SQL_selected = return_modifiers.find(e => e.startsWith("SQL_selected"));
+                                if (SQL_selected) {
+                                    sql_data_type += "[]".repeat((SQL_selected.replace(/[^\[\]]/g, "").length / 2));
+                                    return_data_type = sql_data_type;
                                 }
                             }
                         }
                     }
+                }
+
+                if (return_data_type) {
+                    assignDataType(code_part, return_data_type);
                 }
             }
             break;
@@ -659,6 +677,14 @@ function crawlCodePart(code_part: any) {
                 for (const child of code_part.children) {
                     assignScope(child, code_part);
                     crawlCodePart(child);
+                }
+            }
+            break;
+        case "isset":
+            {
+                for (const variable of code_part.variables) {
+                    assignScope(variable, code_part);
+                    crawlCodePart(variable);
                 }
             }
             break;

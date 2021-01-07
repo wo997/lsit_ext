@@ -165,14 +165,14 @@ export function activate(context: vscode.ExtensionContext) {
     phpDiagnosticCollection = vscode.languages.createDiagnosticCollection('php');
     context.subscriptions.push(phpDiagnosticCollection);
 
-    if (vscode.window.activeTextEditor) {
-        decorateActiveEditor(vscode.window.activeTextEditor.document.uri);
-    }
-
     // needs to run twice, read defs, then find errors
     // phpDiagnosticCollection must be instantiated
     indexFiles();
     indexFiles();
+
+    if (vscode.window.activeTextEditor) {
+        decorateActiveEditor(vscode.window.activeTextEditor.document.uri);
+    }
 }
 
 function getFileData(file_path: string) {
