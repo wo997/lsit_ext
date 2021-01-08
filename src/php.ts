@@ -882,6 +882,30 @@ function crawlCodePart(code_part: any) {
                 crawlCodePart(body);
             }
             break;
+        case "for":
+            {
+                const init = code_part.init;
+                const test = code_part.test;
+                const increment = code_part.increment;
+                const body = code_part.body;
+
+                for (const a of [...init, ...test, ...increment]) {
+                    assignScope(a, code_part);
+                }
+
+                assignScope(init, code_part);
+                assignScope(test, code_part);
+                assignScope(increment, code_part);
+
+                assignScope(body, code_part);
+
+                for (const a of [...init, ...test, ...increment]) {
+                    crawlCodePart(a);
+                }
+
+                crawlCodePart(body);
+            }
+            break;
         case "expressionstatement":
             {
                 const left = code_part.expression.left;
