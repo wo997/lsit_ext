@@ -612,12 +612,19 @@ function crawlCodePart(code_part: any) {
         case "call":
             {
                 assignScope(code_part.what, code_part);
-                //crawlCodePart(code_part.what);
+                crawlCodePart(code_part.what);
 
-                const function_name =
-                    code_part.what.kind === "staticlookup"
-                        ? code_part.what.what.name + "::" + code_part.what.offset.name
-                        : code_part.what.name;
+                let function_name = code_part.what.name;
+
+                if (code_part.what.kind === "staticlookup") {
+                    function_name = code_part.what.what.name + "::" + code_part.what.offset.name;
+                }
+
+                if (code_part.what.kind === "propertylookup"
+                    && code_part.what.what.data_type
+                    && code_part.what.offset.name) {
+                    function_name = code_part.what.what.data_type + "::" + code_part.what.offset.name;
+                }
 
                 const function_def: Function = ext.php_functions[function_name];
 
@@ -813,17 +820,39 @@ function crawlCodePart(code_part: any) {
                 }
             }
             break;
+        case "propertylookup":
+            {
+                const what = code_part.what;
+                const offset = code_part.offset;
+                if (what && offset) {
+                    assignScope(what, code_part);
+                    assignScope(offset, code_part);
+
+                    crawlCodePart(what);
+                    crawlCodePart(offset);
+
+                    //console.log(what, offset);
+                }
+            }
+            break;
         case "number":
             {
                 if (!code_part.data_type) {
                     assignDataType(code_part, "number");
                 }
-            }//
+            }
             break;
         case "string":
             {
                 if (!code_part.data_type) {
                     assignDataType(code_part, "string");
+                }
+            }
+            break;
+        case "new":
+            {
+                if (!code_part.data_type && code_part.what) {
+                    assignDataType(code_part, code_part.what.name);
                 }
             }
             break;
