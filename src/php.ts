@@ -967,7 +967,6 @@ function crawlCodePart(code_part: any) {
                 if (left && right) {
                     assignScope(left, code_part);
                     assignScope(right, code_part);
-                    right.reference = left;
 
                     variableAlike(right);
                     crawlCodePart(right);
@@ -976,13 +975,18 @@ function crawlCodePart(code_part: any) {
                     variableAlike(left);
                     crawlCodePart(left);
 
-                    if (left.data_type && right.data_type && left.data_type != right.data_type) {
+                    const error = left.data_type && right.data_type && left.data_type != right.data_type;
+                    if (error) {
                         temp_errors.push({
-                            message: `Cannot assign **${right.data_type}** to **${left.data_type}**!`,
+                            message: `Cannot assign ${right.data_type} to ${left.data_type}!`,
                             severity: vscode.DiagnosticSeverity.Warning,
                             range: locToRange(code_part.expression.loc)
                         });
                     }
+
+                    assignDataType(left, right.data_type);
+                    crawlCodePart(left); // why call twice?
+                    // cause we need to assign the type from the scope first and then compare / display error
                 } else {
                     const expression = code_part.expression;
                     if (expression) {
@@ -1065,13 +1069,6 @@ function crawlCodePart(code_part: any) {
                 functionAlike(code_part);
             }
             break;
-    }
-
-
-    if (code_part.reference) {
-        if (!code_part.reference.data_type) {
-            assignDataType(code_part.reference, code_part.data_type);
-        }
     }
 
     if (code_part.data_type && code_part.hoverable) {
