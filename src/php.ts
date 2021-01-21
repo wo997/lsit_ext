@@ -614,7 +614,12 @@ function crawlCodePart(code_part: any) {
                 assignScope(code_part.what, code_part);
                 //crawlCodePart(code_part.what);
 
-                const function_def: Function = ext.php_functions[code_part.what.name];
+                const function_name =
+                    code_part.what.kind === "staticlookup"
+                        ? code_part.what.what.name + "::" + code_part.what.offset.name
+                        : code_part.what.name;
+
+                const function_def: Function = ext.php_functions[function_name];
 
                 let return_data_type = "";
                 let return_modifiers: String[] | undefined = [];
@@ -1073,7 +1078,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     try {
         crawlCodePart(php_parsed);
     } catch (e) {
-        console.error('get code data errors:', e);
+        console.error('Code data errors:', e);
         return;
     }
     console.log("Parse code time " + ((new Date()).getTime() - d.getTime()).toString());
