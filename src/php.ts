@@ -134,7 +134,8 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
 
 function createScope(code_part: any) {
     const new_scope: any = {
-        variables: {}
+        variables: {},
+        arguments: [],
     };
 
     if (code_part.scope) {
@@ -143,13 +144,20 @@ function createScope(code_part: any) {
         }
     }
 
-    code_part.scope = new_scope;
+    code_part.scope = util.cloneObject(new_scope);
+
+    if (code_part.pass_scope) {
+        util.deepAssign(code_part.scope, code_part.pass_scope)
+    }
+
+    code_part.pass_scope = util.cloneObject(new_scope);
 };
 
 function assignScope(child_code_part: any, code_part: any) {
     child_code_part.scope = code_part.scope;
     child_code_part.parent_code_part = code_part;
     child_code_part.level = code_part.level + 1;
+    child_code_part.pass_scope = code_part.pass_scope;
 };
 
 
@@ -158,8 +166,6 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
     if (!code_part || !data_type) {
         return;
     }
-
-    code_part.data_type = data_type;
 
     if (ArrayDataTypeToSingle(data_type)) {
         code_part.data_type_data = {
@@ -176,6 +182,8 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
             }
         }
     }
+
+    code_part.data_type = data_type;
 
     const hoverable = options.hoverable;
     code_part.hoverable = hoverable !== undefined ? hoverable : true;
@@ -327,7 +335,7 @@ function variableAlike(code_part: any) {
         const comment = comments[comments.length - 1];
 
         if (comment.kind === "commentblock") {
-            if (comment.value.match(/@type .*{.*}/)) {
+            if (comment.value.match(/@var .*{.*}/)) {
                 const match_annotation_type = comment.value.match(/@[^\s]*/);
                 if (match_annotation_type) {
                     const annotation_type = match_annotation_type[0];
@@ -336,20 +344,20 @@ function variableAlike(code_part: any) {
 
                     temp_decorations.push({
                         annotation: annotation_type,
-                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + start_column + annotation_type.length)
+                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + annotation_type.length)
                     });
                 }
 
-                const match_annotation_data_type = comment.value.match(/{.*}/);
+                const match_annotation_data_type = comment.value.match(/\{\w*\}/);
                 if (match_annotation_data_type) {
-                    const data_type = match_annotation_data_type[0];
-                    annotation_data_type = data_type.substring(1, data_type.length - 1);
+                    const data_type_str = match_annotation_data_type[0];
+                    annotation_data_type = data_type_str.substring(1, data_type_str.length - 1);
 
                     const start_column = comment.loc.start.column + match_annotation_data_type.index;
 
                     temp_decorations.push({
                         annotation_data_type: annotation_data_type,
-                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + start_column + data_type.length)
+                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + data_type_str.length)
                     });
                 }
             }
@@ -509,14 +517,29 @@ function functionAlike(code_part: any) {
 
     const function_data = beforeFunction(code_part);
 
+    let used_scope_arguments = false;
+    let argument_index = -1;
     args.forEach((arg: any) => {
+        argument_index++;
+
         assignScope(arg, code_part);
+
+        if (!arg.data_type && code_part.scope.arguments[argument_index]) {
+            arg.data_type = code_part.scope.arguments[argument_index];
+            used_scope_arguments = true;
+        }
+
         crawlCodePart(arg);
 
-        if (arg.name && arg.name.name) {
+        if (arg.name && arg.name.name && arg.data_type) {
             arg.scope.variables[arg.name.name] = arg.data_type;
         }
     })
+
+    if (used_scope_arguments) {
+        // just in case, only a single function should use these
+        code_part.scope.arguments = [];
+    }
 
     assignScope(body, code_part);
     crawlCodePart(body);
@@ -644,47 +667,84 @@ function crawlCodePart(code_part: any) {
                     return_modifiers = function_def.return_modifiers;
                 }
 
-                let argument_index = -1;
                 for (const arg of code_part.arguments) {
                     if (!arg) {
                         continue;
                     }
+                    assignScope(arg, code_part);
+                }
 
+                let argument_index = -1;
+                for (const arg of code_part.arguments) {
                     argument_index++;
 
-                    const arg_func_def = function_def ? function_def.args[argument_index] : null;
+                    if (!arg) {
+                        continue;
+                    }
 
-                    assignScope(arg, code_part);
+                    const arg_func_def = function_def ? function_def.args[argument_index] : null;
 
                     if (arg_func_def) {
                         const data_type = arg_func_def.data_type;
                         assignDataType(arg, data_type);
                     }
 
-                    crawlCodePart(arg);
+                    if (arg_func_def && arg_func_def.modifiers) {
+                        if (arg_func_def.modifiers.includes("SQL_query")) {
+                            const columns = sql.getSqlColumns(arg.value);
+                            if (columns) {
+                                const properties: any = {};
+                                for (const column of columns) {
+                                    properties[column] = {
+                                        description: "Defined in SQL query"
+                                    };
+                                }
+                                let sql_data_type = JSON.stringify({
+                                    properties: properties
+                                });
 
-                    if (arg_func_def && arg_func_def.modifiers && arg_func_def.modifiers.includes("SQL_query")) {
-                        const columns = sql.getSqlColumns(arg.value);
-                        if (columns) {
-                            const properties: any = {};
-                            for (const column of columns) {
-                                properties[column] = {
-                                    description: "Defined in SQL query"
-                                };
-                            }
-                            let sql_data_type = JSON.stringify({
-                                properties: properties
-                            });
-
-                            if (return_modifiers) {
-                                const SQL_selected = return_modifiers.find(e => e.startsWith("SQL_selected"));
-                                if (SQL_selected) {
-                                    sql_data_type += "[]".repeat((SQL_selected.replace(/[^\[\]]/g, "").length / 2));
-                                    return_data_type = sql_data_type;
+                                if (return_modifiers) {
+                                    const SQL_selected = return_modifiers.find(e => e.startsWith("SQL_selected"));
+                                    if (SQL_selected) {
+                                        sql_data_type += "[]".repeat((SQL_selected.replace(/[^\[\]]/g, "").length / 2));
+                                        return_data_type = sql_data_type;
+                                    }
                                 }
                             }
                         }
+                        if (arg_func_def.modifiers.includes("entity_name")) {
+                            let argument2_index = -1;
+
+                            for (const arg2 of code_part.arguments) {
+                                argument2_index++;
+
+                                if (!arg2 || arg2 === arg) {
+                                    continue;
+                                }
+
+                                const arg2_func_def = function_def ? function_def.args[argument2_index] : null;
+
+                                if (arg2_func_def) {
+                                    if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
+                                        arg2.pass_scope.arguments = [
+                                            "xxx",
+                                            "string"
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                        if (arg_func_def.modifiers.includes("entity_prop_name")) {
+                            //log(arg.value);
+                        }
                     }
+                }
+
+                for (const arg of code_part.arguments) {
+                    if (!arg) {
+                        continue;
+                    }
+                    crawlCodePart(arg);
                 }
 
                 if (return_data_type) {
@@ -838,8 +898,6 @@ function crawlCodePart(code_part: any) {
 
                     crawlCodePart(what);
                     crawlCodePart(offset);
-
-                    //console.log(what, offset);
                 }
             }
             break;
@@ -1040,6 +1098,11 @@ function crawlCodePart(code_part: any) {
             }
             break;
         case "function":
+            {
+                functionAlike(code_part);
+            }
+            break;
+        case "closure":
             {
                 functionAlike(code_part);
             }
