@@ -477,12 +477,12 @@ function beforeFunction(code_part: any) {
         args.push(arg_data);
     })
 
-    temp_file_functions.push({
+    return {
         name: getFunctionName(code_part),
         args,
         return_data_type,
         return_modifiers
-    });
+    };
 }
 
 function getFunctionName(code_part: any): string {
@@ -507,7 +507,7 @@ function functionAlike(code_part: any) {
         crawlCodePart(arg);
     })
 
-    beforeFunction(code_part);
+    const function_data = beforeFunction(code_part);
 
     args.forEach((arg: any) => {
         assignScope(arg, code_part);
@@ -520,6 +520,14 @@ function functionAlike(code_part: any) {
 
     assignScope(body, code_part);
     crawlCodePart(body);
+
+    if (function_data) {
+        if (function_data && body.scope.return_data_type) {
+            function_data.return_data_type = body.scope.return_data_type;
+        }
+
+        temp_file_functions.push(function_data);
+    }
 }
 
 function ArrayDataTypeToSingle(data_type: string) {
@@ -846,6 +854,17 @@ function crawlCodePart(code_part: any) {
             {
                 if (!code_part.data_type) {
                     assignDataType(code_part, "string");
+                }
+            }
+            break;
+        case "return":
+            {
+                if (code_part.expr) {
+                    assignScope(code_part.expr, code_part);
+                    crawlCodePart(code_part.expr);
+                    if (code_part.expr.data_type) {
+                        code_part.scope.return_data_type = code_part.expr.data_type;
+                    }
                 }
             }
             break;
@@ -1193,14 +1212,14 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
         }
         /*else if (code_decoration.error) {
             const error = code_decoration.error;
-
+ 
             description += `**Wo997 Error:**\n\n${error}\n\n`;
-
+ 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
-
+ 
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
-
+ 
             error_decorations.push(decoration);
         }*/
         else if (code_decoration.typedef_property_name) {
