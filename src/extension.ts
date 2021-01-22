@@ -352,7 +352,11 @@ function decorateActiveEditor(uri: vscode.Uri) {
 
     if (visibleRanges && visibleRanges[0]) {
         if (IS_PHP) {
-            php.decorateFile(sourceCode, editor, uri.path);
+            const file_data = php.decorateFile(sourceCode, editor, uri.path);
+            if (file_data && !util.isEquivalent(files_data[uri.path], file_data)) {
+                files_data[uri.path] = file_data;
+                filesUpdated();
+            }
         }
         if (IS_JS) {
             //js.scanFile(editor, sourceCode);

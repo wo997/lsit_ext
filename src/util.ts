@@ -54,3 +54,28 @@ export function isObject(input: any) {
 export function isArray(input: any) {
     return input && Array.isArray(input) && typeof input === "object";
 }
+export function isEquivalent(a: any, b: any) {
+    if (!a || !b) {
+        return a === b;
+    }
+    const aProps = Object.getOwnPropertyNames(a);
+    const bProps = Object.getOwnPropertyNames(b);
+
+    if (aProps.length !== bProps.length) {
+        return false;
+    }
+
+    for (const prop of aProps) {
+        if (typeof a[prop] === "object") {
+            if (!isEquivalent(a[prop], b[prop])) {
+                return false;
+            }
+        } else {
+            if (a[prop] !== b[prop]) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}

@@ -237,7 +237,7 @@ function addInterestingCodePart(code_part: any) {
     if (code_part.kind === "string" && code_part.possible_props) {
         const props = Object.keys(code_part.possible_props);
         if (props.length > 0 && !props.includes(code_part.value)) {
-            let message = `${code_part.value} not found in :`;
+            let message = `${code_part.value} not found in:`;
             message += props.map(e => `\n • ${e}`);
 
             temp_errors.push({
@@ -1536,6 +1536,13 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     }
 
     editor.setDecorations(ext.decorate_wo997_annotation, wo997_annotation_decorations);
+
+    if (ext.textChangeEventTimeout) {
+        return undefined;
+    } else {
+        return { typedefs: file_typedefs, scopes: file_scopes };
+
+    }
 }
 
 function updateFileErrors(file_path: string, errors: Array<vscode.Diagnostic>) {
