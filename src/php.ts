@@ -151,36 +151,6 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
             });
             return suggestions;
         }
-
-        /*if (code_part.kind === "string" && code_part.possible_properties) {
-            let suggestions: any = [];
-            // @ts-ignore
-            Object.entries(code_part.possible_properties).forEach(([prop_name, prop_data]: [any, Property]) => {
-                let display_name = "";
-                display_name += prop_name;
-                if (prop_data.optional) {
-                    display_name += "?";
-                }
-
-                const completion_item = new vscode.CompletionItem(display_name, vscode.CompletionItemKind.Property);
-                completion_item.insertText = prop_name;
-
-                if (prop_data.data_type) {
-                    completion_item.detail = prop_data.data_type;
-                }
-
-                let description = "";
-                if (prop_data.description) {
-                    description += prop_data.description + " ";
-                }
-                if (description) {
-                    completion_item.documentation = description;
-                }
-
-                suggestions.push(completion_item);
-            });
-            return suggestions;
-        }*/
     }
 
     return undefined;
@@ -263,6 +233,20 @@ function assignModifiers(code_part: any, modifiers: Array<any>) {
 function addInterestingCodePart(code_part: any) {
     if (isCursorInCodePart(code_part)) {
         temp_interesting_code_parts.push(code_part);
+    }
+
+    if (code_part.kind === "string" && code_part.possible_properties) {
+        const props = Object.keys(code_part.possible_properties);
+        if (!props.includes(code_part.value)) {
+            let message = `${code_part.value} not found in :`;
+            message += props.map(e => `\n • ${e}`);
+
+            temp_errors.push({
+                message,
+                severity: vscode.DiagnosticSeverity.Error,
+                range: locToRange(code_part.loc)
+            });
+        }
     }
 }
 
@@ -847,19 +831,19 @@ function crawlCodePart(code_part: any) {
                                 }
                             }
 
-                            addInterestingCodePart(arg);
                             arg.possible_properties = {};
                             for (const p of Object.keys(entity_type_defs)) {
                                 arg.possible_properties[util.camelToSnakeCase(p.substring("Entity".length))] = { data_type: "string" };
                             }
+                            addInterestingCodePart(arg);
                         }
                         if (arg_func_def.modifiers.includes("entity_prop_name")) {
                             if (object_data_type) {
                                 const type_def = entity_type_defs[object_data_type];
 
                                 if (type_def) {
-                                    addInterestingCodePart(arg);
                                     arg.possible_properties = type_def.properties;
+                                    addInterestingCodePart(arg);
                                 }
                             }
                         }
@@ -1209,7 +1193,6 @@ function crawlCodePart(code_part: any) {
                     if (what.data_type) {
                         if (what.data_type_data && what.data_type_data.properties) {
                             offset.possible_properties = what.data_type_data.properties;
-
                             addInterestingCodePart(offset);
 
                             const offset_value = offset.value;
