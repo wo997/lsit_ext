@@ -20,7 +20,7 @@ export function cloneObject(obj: any, src = null) {
 export function probablyJSON(str: string) {
     return !!str.match(/^(\{|\[).*(\}|\])$/);
 }
-export function toCamelCase(str: string) {
+export function toTitleCase(str: string): string {
     return str ? str.replace(/([a-z])([A-Z])/g, function (allMatches, firstMatch, secondMatch) {
         return firstMatch + " " + secondMatch;
     })
@@ -46,3 +46,11 @@ export function camelToSnakeCase(str: string) {
     }
     return str;
 };
+
+export function isObject(input: any) {
+    return input && !Array.isArray(input) && typeof input === "object";
+}
+
+export function isArray(input: any) {
+    return input && Array.isArray(input) && typeof input === "object";
+}

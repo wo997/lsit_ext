@@ -19,7 +19,7 @@ const php_parser = new engine({
 
 export interface TypeDef {
     name: string;
-    properties: any
+    props: any
 }
 
 export interface Function {
@@ -36,7 +36,7 @@ interface FunctionArgument {
     modifiers: Array<string>;
 }
 
-interface Property {
+interface Prop {
     data_type: string;
     name: string;
     optional?: boolean;
@@ -46,7 +46,7 @@ interface Property {
 interface Decoration extends vscode.DecorationOptions {
     annotation?: string,
     annotation_data_type?: string,
-    typedef_property_name?: string,
+    typedef_prop_name?: string,
     modifier?: string
     typedef_data_type?: string,
     param?: string,
@@ -122,10 +122,10 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
     for (const code_part of interesting_code_parts) {
         // what's funny, we did the exact same check before that item was even added ;)
         // code_part.loc.start.line - 1 === position.line && code_part.loc.start.column <= position.character && code_part.loc.end.column >= position.character
-        if (code_part.kind === "string" && code_part.possible_properties) {
+        if (code_part.kind === "string" && code_part.possible_props) {
             let suggestions: any = [];
             // @ts-ignore
-            Object.entries(code_part.possible_properties).forEach(([prop_name, prop_data]: [any, Property]) => {
+            Object.entries(code_part.possible_props).forEach(([prop_name, prop_data]: [any, Prop]) => {
                 let display_name = "";
                 display_name += prop_name;
                 if (prop_data.optional) {
@@ -195,11 +195,10 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
 
     const is_array = ext.php_type_defs[data_type];
 
-    const ew = "Entity";
     let additional_type = null;
-    if (data_type.startsWith(ew)) {
-        additional_type = data_type.substr(ew.length);
-        data_type = ew;
+    if (data_type.startsWith("Entity")) {
+        additional_type = data_type.substr("Entity".length);
+        data_type = "Entity";
     }
 
     code_part.additional_type = data_type;
@@ -235,9 +234,9 @@ function addInterestingCodePart(code_part: any) {
         temp_interesting_code_parts.push(code_part);
     }
 
-    if (code_part.kind === "string" && code_part.possible_properties) {
-        const props = Object.keys(code_part.possible_properties);
-        if (!props.includes(code_part.value)) {
+    if (code_part.kind === "string" && code_part.possible_props) {
+        const props = Object.keys(code_part.possible_props);
+        if (props.length > 0 && !props.includes(code_part.value)) {
             let message = `${code_part.value} not found in :`;
             message += props.map(e => `\n • ${e}`);
 
@@ -295,7 +294,7 @@ function crawlCodePartComments(comments: any) {
 
                         current_typedef = {
                             name: typedef,
-                            properties: {}
+                            props: {}
                         };
 
                         const start_column = actual_left + match_typedef.index;
@@ -332,18 +331,18 @@ function crawlCodePartComments(comments: any) {
                             range: locNumbersToRange(actual_line, start_column, actual_line, start_column + match_end[0].length)
                         });
                     } else {
-                        const match_property = line.match(/[^\s]*\??: ?[^\s]*/);
-                        if (match_property) {
-                            const [prop_name_full, data_type_full] = match_property[0].split(":");
+                        const match_prop = line.match(/[^\s]*\??: ?[^\s]*/);
+                        if (match_prop) {
+                            const [prop_name_full, data_type_full] = match_prop[0].split(":");
 
-                            const start_column = actual_left + match_property.index;
+                            const start_column = actual_left + match_prop.index;
 
                             const prop_name_optional = prop_name_full.trim();
                             const prop_name = prop_name_optional.replace(/\?/g, "");
                             const data_type = data_type_full.trim();
 
                             temp_decorations.push({
-                                typedef_property_name: prop_name,
+                                typedef_prop_name: prop_name,
                                 range: locNumbersToRange(actual_line, start_column, actual_line, start_column + prop_name_optional.length)
                             });
 
@@ -367,7 +366,7 @@ function crawlCodePartComments(comments: any) {
                                 if (prop_name_optional.endsWith("?")) {
                                     data_type_obj.optional = true;
                                 }
-                                current_typedef.properties[prop_name] = data_type_obj;
+                                current_typedef.props[prop_name] = data_type_obj;
                             }
                         }
                     }
@@ -709,7 +708,7 @@ function crawlCodePart(code_part: any) {
                 let object_data_type = null;
                 let object_methods = null;
 
-                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "propertylookup") {
+                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "proplookup") {
                     if (code_part.what.kind === "staticlookup") {
                         object_data_type = code_part.what?.what?.name;
                         object_base_type = object_data_type;
@@ -717,7 +716,7 @@ function crawlCodePart(code_part: any) {
                         if (class_data) {
                             object_methods = class_data.static_functions;
                         }
-                    } else if (code_part.what.kind === "propertylookup") {
+                    } else if (code_part.what.kind === "proplookup") {
                         object_data_type = code_part.what?.what?.data_type;
                         object_base_type = code_part.what?.what?.base_type;
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
@@ -765,32 +764,18 @@ function crawlCodePart(code_part: any) {
                         assignDataType(arg, data_type);
                     }
 
-                    const entity_type_defs: any = {
-                        EntityPies: {
-                            properties: {
-                                paw: { data_type: "string" },
-                                food: { data_type: "number" }
-                            }
-                        },
-                        EntityPiesx: {
-                            properties: {
-                                aaa: { data_type: "string" },
-                            }
-                        }
-                    }
-
                     if (arg_func_def && arg_func_def.modifiers) {
                         if (arg_func_def.modifiers.includes("SQL_query")) {
                             const columns = sql.getSqlColumns(arg.value);
                             if (columns) {
-                                const properties: any = {};
+                                const props: any = {};
                                 for (const column of columns) {
-                                    properties[column] = {
+                                    props[column] = {
                                         description: "Defined in SQL query"
                                     };
                                 }
                                 let sql_data_type = JSON.stringify({
-                                    properties: properties
+                                    props: props
                                 });
 
                                 if (return_modifiers) {
@@ -805,7 +790,7 @@ function crawlCodePart(code_part: any) {
                         if (arg_func_def.modifiers.includes("entity_name")) {
                             let argument2_index = -1;
 
-                            const data_type = "Entity" + util.toCamelCase(arg.value);
+                            const data_type = "Entity" + util.toTitleCase(arg.value);
                             if (return_data_type === "Entity") {
                                 return_data_type = data_type;
                             } else {
@@ -831,21 +816,64 @@ function crawlCodePart(code_part: any) {
                                 }
                             }
 
-                            arg.possible_properties = {};
-                            for (const p of Object.keys(entity_type_defs)) {
-                                arg.possible_properties[util.camelToSnakeCase(p.substring("Entity".length))] = { data_type: "string" };
-                            }
+                            arg.possible_props = ext.php_entity_names_as_prop;
                             addInterestingCodePart(arg);
                         }
                         if (arg_func_def.modifiers.includes("entity_prop_name")) {
                             if (object_data_type) {
-                                const type_def = entity_type_defs[object_data_type];
-
+                                const type_def = ext.php_type_defs[object_data_type];
                                 if (type_def) {
-                                    arg.possible_properties = type_def.properties;
+                                    arg.possible_props = type_def.props;
                                     addInterestingCodePart(arg);
                                 }
                             }
+                        }
+                        if (arg_func_def.modifiers.includes("register_entity_name")) {
+                            arg.scope.register_entity_name = arg.value;
+                        }
+                    }
+
+                    if (arg.data_type === "RegisterEntityData") {
+                        const crawlArray = (sub_arr: any) => {
+                            if (sub_arr.kind !== "array") {
+                                return sub_arr.value;
+                            }
+
+                            let sub_data: any = null;
+                            let is_array = false;
+                            for (const item of sub_arr.items) {
+                                if (!sub_data) {
+                                    if (item.key && item.value) {
+                                        sub_data = {};
+                                    } else {
+                                        sub_data = [];
+                                        is_array = true;
+                                    }
+                                }
+
+                                if (is_array) {
+                                    if (item.value) {
+                                        sub_data.push(crawlArray(item.value));
+                                    }
+                                } else {
+                                    if (item.key && item.value) {
+                                        sub_data[item.key.value] = crawlArray(item.value);
+                                    }
+                                }
+                            }
+
+                            return sub_data;
+                        }
+
+
+                        if (arg.scope.register_entity_name) {
+                            const data = crawlArray(arg);
+                            const data_type = "Entity" + util.toTitleCase(arg.scope.register_entity_name);
+
+                            temp_file_typedefs.push({
+                                name: data_type,
+                                props: data.props
+                            });
                         }
                     }
                 }
@@ -897,8 +925,8 @@ function crawlCodePart(code_part: any) {
                     }
                 }
 
-                if (data_type_data && data_type_data.properties) {
-                    let missing_props: any = util.cloneObject(data_type_data.properties);
+                if (data_type_data && data_type_data.props) {
+                    let missing_props: any = util.cloneObject(data_type_data.props);
 
                     for (const item of code_part.items) {
                         const fake_key = item.key ? item.key : item.value;
@@ -927,14 +955,14 @@ function crawlCodePart(code_part: any) {
                     for (const item of code_part.items) {
                         const fake_key = item.key ? item.key : item.value;
                         if (fake_key.kind == "string") {
-                            fake_key.possible_properties = missing_props;
+                            fake_key.possible_props = missing_props;
                             addInterestingCodePart(fake_key);
                         }
 
                         assignScope(item, code_part);
 
                         if (item.key && item.key.kind === "string" && item.value) {
-                            const sub_data_type_data = data_type_data.properties[item.key.value];
+                            const sub_data_type_data = data_type_data.props[item.key.value];
                             if (sub_data_type_data) {
                                 assignDataType(item.value, sub_data_type_data.data_type);
                             }
@@ -944,7 +972,7 @@ function crawlCodePart(code_part: any) {
                     let missing_names: any = [];
 
                     // @ts-ignore
-                    Object.entries(missing_props).forEach(([prop_name, prop_data]: [any, Property]) => {
+                    Object.entries(missing_props).forEach(([prop_name, prop_data]: [any, Prop]) => {
                         if (!prop_data.optional) {
                             missing_names.push(` • ${prop_name}\n`);
                         }
@@ -962,6 +990,17 @@ function crawlCodePart(code_part: any) {
                 for (const item of code_part.items) {
                     crawlCodePart(item);
                 }
+
+                if (!code_part.data_type) {
+                    assignDataType(code_part, "array");
+                } /*else if (code_part.data_type !== "array") { // array is a base_type and the typedef should be addiitonal, work on it!
+                    //code_part.additional_type ?
+                    temp_errors.push({
+                        message: `Cannot use array, expected ${code_part.data_type}!`,
+                        severity: vscode.DiagnosticSeverity.Warning,
+                        range: locToRange(code_part.loc)
+                    });
+                }*/
             }
             break;
         case "entry":
@@ -998,7 +1037,7 @@ function crawlCodePart(code_part: any) {
                 }
             }
             break;
-        case "propertylookup":
+        case "proplookup":
             {
                 const what = code_part.what;
                 const offset = code_part.offset;
@@ -1047,9 +1086,8 @@ function crawlCodePart(code_part: any) {
                         additional_type = code_part.arguments[0]?.value;
                     }
 
-                    const ew = "Entity";
-                    if (data_type.startsWith(ew) && additional_type) {
-                        data_type += util.toCamelCase(additional_type);
+                    if (data_type.startsWith("Entity") && additional_type) {
+                        data_type += util.toTitleCase(additional_type);
                     }
 
                     assignDataType(code_part, data_type);
@@ -1191,14 +1229,14 @@ function crawlCodePart(code_part: any) {
                     crawlCodePart(what);
 
                     if (what.data_type) {
-                        if (what.data_type_data && what.data_type_data.properties) {
-                            offset.possible_properties = what.data_type_data.properties;
+                        if (what.data_type_data && what.data_type_data.props) {
+                            offset.possible_props = what.data_type_data.props;
                             addInterestingCodePart(offset);
 
                             const offset_value = offset.value;
-                            const offset_property = offset.possible_properties[offset_value];
-                            if (offset_property) {
-                                assignDataType(offset, offset_property.data_type);
+                            const offset_prop = offset.possible_props[offset_value];
+                            if (offset_prop) {
+                                assignDataType(offset, offset_prop.data_type);
                             }
                         } else {
                             // we could restrict it to numbers but it's unnecessary
@@ -1293,6 +1331,9 @@ export function getFileMetadata(sourceCode: string, file_path: string): ext.File
     }
 
     file_typedefs = temp_file_typedefs;
+    if (file_typedefs.length > 0) {
+        console.log(file_typedefs);
+    }
     file_scopes = temp_file_scopes;
 
     updateFileErrors(file_path, temp_errors);
@@ -1332,7 +1373,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     let annotation_type_decorations: vscode.DecorationOptions[] = [];
     let annotation_data_type_decorations: vscode.DecorationOptions[] = [];
     //let error_decorations: vscode.DecorationOptions[] = [];
-    let typedef_property_name_decorations: vscode.DecorationOptions[] = [];
+    let typedef_prop_name_decorations: vscode.DecorationOptions[] = [];
     let typedef_data_type_decorations: vscode.DecorationOptions[] = [];
     let curly_braces_decorations: vscode.DecorationOptions[] = [];
     let param_decorations: vscode.DecorationOptions[] = [];
@@ -1351,9 +1392,9 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
             if (display_type) {
                 description += `${display_type}\n\n`;
             }
-            if (data_type_data && data_type_data.properties) {
+            if (data_type_data && data_type_data.props) {
                 // @ts-ignore
-                description += Object.entries(data_type_data.properties).map(([prop_name, prop_data]: [any, Property]) => {
+                description += Object.entries(data_type_data.props).map(([prop_name, prop_data]: [any, Prop]) => {
                     let display = "";
                     display += ` • ${prop_name}`;
                     if (prop_data.optional) {
@@ -1409,17 +1450,17 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
  
             error_decorations.push(decoration);
         }*/
-        else if (code_decoration.typedef_property_name) {
-            const typedef_property_name = code_decoration.typedef_property_name;
+        else if (code_decoration.typedef_prop_name) {
+            const typedef_prop_name = code_decoration.typedef_prop_name;
 
-            description += `${typedef_property_name}\n\n`;
+            description += `${typedef_prop_name}\n\n`;
 
             const myContent = new vscode.MarkdownString(description);
             myContent.isTrusted = true;
 
             let decoration: vscode.DecorationOptions = { range, hoverMessage: myContent };
 
-            typedef_property_name_decorations.push(decoration);
+            typedef_prop_name_decorations.push(decoration);
         }
         else if (code_decoration.typedef_data_type) {
             const typedef_data_type = code_decoration.typedef_data_type;
@@ -1453,7 +1494,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     editor.setDecorations(ext.decorate_entity, entity_decorations);
     editor.setDecorations(ext.decorate_annotation_type, annotation_type_decorations);
     editor.setDecorations(ext.decorate_annotation_data_type, annotation_data_type_decorations);
-    editor.setDecorations(ext.decorate_typedef_property_name, typedef_property_name_decorations);
+    editor.setDecorations(ext.decorate_typedef_prop_name, typedef_prop_name_decorations);
     editor.setDecorations(ext.decorate_typedef_data_type, typedef_data_type_decorations);
     editor.setDecorations(ext.decorate_curly_braces, curly_braces_decorations);
     editor.setDecorations(ext.decorate_params, param_decorations);

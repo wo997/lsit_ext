@@ -18,6 +18,7 @@ export interface FileData {
 // store some data under each file's path
 export let files_data: any = {};
 export let php_type_defs: any = {};
+export let php_entity_names_as_prop: any = {};
 export let php_scopes: php.FileScopes = {
     global: {
         functions: new Map()
@@ -75,7 +76,7 @@ export const decorate_annotation_data_type = vscode.window.createTextEditorDecor
 //     backgroundColor: '#f003'
 // });
 
-export const decorate_typedef_property_name = vscode.window.createTextEditorDecorationType({
+export const decorate_typedef_prop_name = vscode.window.createTextEditorDecorationType({
     color: '#999'
 });
 
@@ -247,6 +248,7 @@ function filesUpdated() {
     //console.log("files_data", files_data);
 
     let temp_php_type_defs: any = {};
+    let temp_php_entity_names_as_prop: any = {};
 
     let temp_php_scopes: php.FileScopes = {
         global: {
@@ -262,34 +264,21 @@ function filesUpdated() {
             if (!type_def) {
                 type_def = {
                     name: file_type_def.name,
-                    properties: {}
+                    props: {}
                 };
                 temp_php_type_defs[type_def.name] = type_def;
             }
-            util.deepAssign(type_def.properties, file_type_def.properties);
+            util.deepAssign(type_def.props, file_type_def.props);
+
+            if (type_def.name.startsWith("Entity")) {
+                temp_php_entity_names_as_prop[util.camelToSnakeCase(type_def.name.substring("Entity".length))] = { data_type: "string" };
+            }
         });
 
         util.deepAssign(temp_php_scopes, file_data.scopes);
-
-        /*if (file_data.scopes?.global.functions) {
-            util.deepAssign(temp_php_scopes.global.functions, file_data.scopes.global.functions);
-        }
-
-        if (file_data.scopes?.classes) {
-            util.deepAssign(temp_php_scopes.classes, file_data.scopes.classes);
-        }*/
-
-        /*file_data.functions?.forEach((file_function: php.Function) => {
-            const function_def: php.Function = {
-                name: file_function.name,
-                args: file_function.args,
-                return_data_type: file_function.return_data_type,
-                return_modifiers: file_function.return_modifiers
-            }
-            temp_php_scopes[file_function.name] = function_def;
-        });*/
     });
 
+    php_entity_names_as_prop = temp_php_entity_names_as_prop;
     php_type_defs = temp_php_type_defs;
     php_scopes = temp_php_scopes;
     console.log("php_type_defs", php_type_defs);

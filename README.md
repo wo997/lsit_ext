@@ -1,6 +1,6 @@
 ## Features
 
-product entity properties code completion
+product entity props code completion
 
 ## Requirements
 
