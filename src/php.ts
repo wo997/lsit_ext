@@ -27,6 +27,7 @@ export interface Function {
     args: Array<FunctionArgument>;
     return_data_type: string
     return_modifiers?: Array<string>
+    is_static?: boolean
 }
 
 interface FunctionArgument {
@@ -54,6 +55,19 @@ interface Decoration extends vscode.DecorationOptions {
     data_type_data?: any
 }
 
+export interface ClassScope {
+    name: string,
+    static_functions: any
+    methods: any
+}
+
+export interface FileScopes {
+    global: {
+        functions: any
+    };
+    classes: any
+}
+
 enum ScanTypeEnum {
     "decorate",
     "get_metadata"
@@ -67,10 +81,19 @@ let temp_decorations: Array<Decoration> = [];
 let file_typedefs: TypeDef[] = [];
 let temp_file_typedefs: TypeDef[] = [];
 
-let file_functions: Function[] = [];
-let temp_file_functions: Function[] = [];
+let file_scopes: FileScopes = {
+    global: {
+        functions: {}
+    },
+    classes: {}
+};
 
-
+let temp_file_scopes: FileScopes = {
+    global: {
+        functions: {}
+    },
+    classes: {}
+};
 
 // usually holds a single or multiple code parts nearby the cursor
 let interesting_code_parts: any;
@@ -98,7 +121,8 @@ function locNumbersToRange(l1: number, c1: number, l2: number, c2: number) {
 export function getCompletionItems(document: vscode.TextDocument, position: vscode.Position, linePrefix: string): vscode.CompletionItem[] | undefined {
     for (const code_part of interesting_code_parts) {
         // what's funny, we did the exact same check before that item was even added ;)
-        if (code_part.kind === "string" && code_part.possible_properties && code_part.loc.start.line - 1 === position.line && code_part.loc.start.column <= position.character && code_part.loc.end.column >= position.character) {
+        // code_part.loc.start.line - 1 === position.line && code_part.loc.start.column <= position.character && code_part.loc.end.column >= position.character
+        if (code_part.kind === "string" && code_part.possible_properties) {
             let suggestions: any = [];
             // @ts-ignore
             Object.entries(code_part.possible_properties).forEach(([prop_name, prop_data]: [any, Property]) => {
@@ -127,6 +151,36 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
             });
             return suggestions;
         }
+
+        /*if (code_part.kind === "string" && code_part.possible_properties) {
+            let suggestions: any = [];
+            // @ts-ignore
+            Object.entries(code_part.possible_properties).forEach(([prop_name, prop_data]: [any, Property]) => {
+                let display_name = "";
+                display_name += prop_name;
+                if (prop_data.optional) {
+                    display_name += "?";
+                }
+
+                const completion_item = new vscode.CompletionItem(display_name, vscode.CompletionItemKind.Property);
+                completion_item.insertText = prop_name;
+
+                if (prop_data.data_type) {
+                    completion_item.detail = prop_data.data_type;
+                }
+
+                let description = "";
+                if (prop_data.description) {
+                    description += prop_data.description + " ";
+                }
+                if (description) {
+                    completion_item.documentation = description;
+                }
+
+                suggestions.push(completion_item);
+            });
+            return suggestions;
+        }*/
     }
 
     return undefined;
@@ -167,6 +221,20 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         return;
     }
 
+    code_part.data_type = data_type;
+
+    const is_array = ext.php_type_defs[data_type];
+
+    const ew = "Entity";
+    let additional_type = null;
+    if (data_type.startsWith(ew)) {
+        additional_type = data_type.substr(ew.length);
+        data_type = ew;
+    }
+
+    code_part.additional_type = data_type;
+    code_part.base_type = data_type;
+
     if (ArrayDataTypeToSingle(data_type)) {
         code_part.data_type_data = {
             type: "array"
@@ -179,11 +247,10 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
             const data_type_data = ext.php_type_defs[data_type];
             if (data_type_data) {
                 code_part.data_type_data = data_type_data;
+                code_part.is_array = is_array;
             }
         }
     }
-
-    code_part.data_type = data_type;
 
     const hoverable = options.hoverable;
     code_part.hoverable = hoverable !== undefined ? hoverable : true;
@@ -376,7 +443,7 @@ function variableAlike(code_part: any) {
     }
 }
 
-function beforeFunction(code_part: any) {
+function beforeFunction(code_part: any): Function | undefined {
     const comments = code_part.leadingComments;
 
     if (!code_part.name || typeof code_part.name.name !== "string") {
@@ -486,22 +553,12 @@ function beforeFunction(code_part: any) {
     })
 
     return {
-        name: getFunctionName(code_part),
+        name: code_part.name.name,
         args,
         return_data_type,
-        return_modifiers
+        return_modifiers,
+        is_static: code_part.isStatic,
     };
-}
-
-function getFunctionName(code_part: any): string {
-    let name = "";
-    if (code_part.scope.class) {
-        name += code_part.scope.class + "::";
-    }
-    if (code_part.name && code_part.name.name) {
-        name += code_part.name.name;
-    }
-    return name;
 }
 
 function functionAlike(code_part: any) {
@@ -549,7 +606,25 @@ function functionAlike(code_part: any) {
             function_data.return_data_type = body.scope.return_data_type;
         }
 
-        temp_file_functions.push(function_data);
+        if (code_part.scope.class) {
+            let class_data: ClassScope = temp_file_scopes.classes[code_part.scope.class];
+            if (!class_data) {
+                class_data = {
+                    name: code_part.scope.class,
+                    methods: {},
+                    static_functions: {}
+                };
+                temp_file_scopes.classes[code_part.scope.class] = class_data;
+            }
+            if (function_data.is_static) {
+                class_data.static_functions[function_data.name] = function_data;
+            } else {
+                class_data.methods[function_data.name] = function_data;
+            }
+        }
+        else {
+            temp_file_scopes.global.functions[function_data.name] = function_data;
+        }
     }
 }
 
@@ -645,19 +720,31 @@ function crawlCodePart(code_part: any) {
                 assignScope(code_part.what, code_part);
                 crawlCodePart(code_part.what);
 
-                let function_name = code_part.what.name;
 
-                if (code_part.what.kind === "staticlookup") {
-                    function_name = code_part.what.what.name + "::" + code_part.what.offset.name;
+                // or
+                const method_name = code_part.what?.offset?.name;
+
+                let function_def = null;
+
+                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "propertylookup") {
+                    if (code_part.what.kind === "staticlookup") {
+                        const class_data: ClassScope = ext.php_scopes.classes[code_part.what?.what?.name];
+                        if (class_data) {
+                            function_def = class_data.static_functions[method_name];
+                        }
+                    } else if (code_part.what.kind === "propertylookup") {
+                        let data_type = code_part.what?.what?.base_type;
+                        if (data_type) {
+                            const class_data: ClassScope = ext.php_scopes.classes[data_type];
+                            if (class_data) {
+                                function_def = class_data.methods[method_name];
+                            }
+                        }
+                    }
+                } else {
+                    const function_name = code_part.what?.name;
+                    function_def = ext.php_scopes.global.functions[function_name];
                 }
-
-                if (code_part.what.kind === "propertylookup"
-                    && code_part.what.what.data_type
-                    && code_part.what.offset.name) {
-                    function_name = code_part.what.what.data_type + "::" + code_part.what.offset.name;
-                }
-
-                const function_def: Function = ext.php_functions[function_name];
 
                 let return_data_type = "";
                 let return_modifiers: String[] | undefined = [];
@@ -715,6 +802,9 @@ function crawlCodePart(code_part: any) {
                         if (arg_func_def.modifiers.includes("entity_name")) {
                             let argument2_index = -1;
 
+                            const data_type = "Entity" + util.toCamelCase(arg.value);
+                            return_data_type = data_type;
+
                             for (const arg2 of code_part.arguments) {
                                 argument2_index++;
 
@@ -727,7 +817,7 @@ function crawlCodePart(code_part: any) {
                                 if (arg2_func_def) {
                                     if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
                                         arg2.pass_scope.arguments = [
-                                            "xxx",
+                                            data_type,
                                             "string"
                                         ];
                                     }
@@ -735,7 +825,30 @@ function crawlCodePart(code_part: any) {
                             }
                         }
                         if (arg_func_def.modifiers.includes("entity_prop_name")) {
-                            //log(arg.value);
+                            if (code_part.what.kind === "propertylookup") {
+                                const data_type = code_part.what?.what?.data_type;
+
+                                const entity_type_defs: any = {
+                                    EntityPies: {
+                                        properties: {
+                                            paw: { data_type: "string" },
+                                            food: { data_type: "number" }
+                                        }
+                                    },
+                                    EntityPiesx: {
+                                        properties: {
+                                            aaa: { data_type: "string" },
+                                        }
+                                    }
+                                }
+
+                                const type_def = entity_type_defs[data_type];
+
+                                if (type_def) {
+                                    addInterestingCodePart(arg);
+                                    arg.possible_properties = type_def.properties;
+                                }
+                            }
                         }
                     }
                 }
@@ -896,6 +1009,7 @@ function crawlCodePart(code_part: any) {
                     assignScope(what, code_part);
                     assignScope(offset, code_part);
 
+                    what.leadingComments = code_part.leadingComments;
                     crawlCodePart(what);
                     crawlCodePart(offset);
                 }
@@ -929,7 +1043,19 @@ function crawlCodePart(code_part: any) {
         case "new":
             {
                 if (!code_part.data_type && code_part.what) {
-                    assignDataType(code_part, code_part.what.name);
+                    let data_type = code_part.what.name;
+                    let additional_type = null;
+
+                    if (code_part.arguments[0]?.kind === "string") {
+                        additional_type = code_part.arguments[0]?.value;
+                    }
+
+                    const ew = "Entity";
+                    if (data_type.startsWith(ew) && additional_type) {
+                        data_type += util.toCamelCase(additional_type);
+                    }
+
+                    assignDataType(code_part, data_type);
                 }
             }
             break;
@@ -1148,7 +1274,12 @@ function cleanupTempVars() {
     temp_decorations = [];
     temp_interesting_code_parts = [];
     temp_file_typedefs = [];
-    temp_file_functions = [];
+    temp_file_scopes = {
+        global: {
+            functions: {}
+        },
+        classes: {}
+    };
 }
 
 export function getFileMetadata(sourceCode: string, file_path: string): ext.FileData | undefined {
@@ -1166,11 +1297,11 @@ export function getFileMetadata(sourceCode: string, file_path: string): ext.File
     }
 
     file_typedefs = temp_file_typedefs;
-    file_functions = temp_file_functions;
+    file_scopes = temp_file_scopes;
 
     updateFileErrors(file_path, temp_errors);
 
-    return { typedefs: file_typedefs, functions: file_functions };
+    return { typedefs: file_typedefs, scopes: file_scopes };
 }
 
 export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file_path: string) {
@@ -1195,7 +1326,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     const code_decorations = temp_decorations;
     interesting_code_parts = temp_interesting_code_parts;
     file_typedefs = temp_file_typedefs;
-    file_functions = temp_file_functions;
+    file_scopes = temp_file_scopes;
 
     //console.log(file_functions);
     //console.log(file_typedefs);

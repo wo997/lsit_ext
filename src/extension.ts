@@ -12,13 +12,18 @@ export let phpDiagnosticCollection: vscode.DiagnosticCollection;
 
 export interface FileData {
     typedefs?: php.TypeDef[]
-    functions?: php.Function[]
+    scopes?: php.FileScopes
 }
 
 // store some data under each file's path
 export let files_data: any = {};
 export let php_type_defs: any = {};
-export let php_functions: any = {};
+export let php_scopes: php.FileScopes = {
+    global: {
+        functions: new Map()
+    },
+    classes: new Map()
+};
 export let visibleRanges: vscode.Range[] | undefined = undefined;
 export let textChangeEventTimeout: any = null;
 
@@ -185,7 +190,7 @@ function updateFile(file_path: string) {
 
         if (file_path.endsWith(".php")) {
             const file_data = php.getFileMetadata(sourceCode, file_path);
-            if (file_data && (file_data.typedefs?.length || file_data.functions?.length)) {
+            if (file_data) { // && (file_data.typedefs?.length || file_data.functions?.length)) {
                 files_data[file_path] = file_data;
                 //console.log("============ " + file_path, file_data);
             } else {
@@ -243,7 +248,12 @@ function filesUpdated() {
 
     let temp_php_type_defs: any = {};
 
-    let temp_php_functions: any = {};
+    let temp_php_scopes: php.FileScopes = {
+        global: {
+            functions: {}
+        },
+        classes: {}
+    };
 
     // @ts-ignore
     Object.values(files_data).forEach((file_data: FileData) => {
@@ -259,21 +269,31 @@ function filesUpdated() {
             util.deepAssign(type_def.properties, file_type_def.properties);
         });
 
-        file_data.functions?.forEach((file_function: php.Function) => {
+        util.deepAssign(temp_php_scopes, file_data.scopes);
+
+        /*if (file_data.scopes?.global.functions) {
+            util.deepAssign(temp_php_scopes.global.functions, file_data.scopes.global.functions);
+        }
+
+        if (file_data.scopes?.classes) {
+            util.deepAssign(temp_php_scopes.classes, file_data.scopes.classes);
+        }*/
+
+        /*file_data.functions?.forEach((file_function: php.Function) => {
             const function_def: php.Function = {
                 name: file_function.name,
                 args: file_function.args,
                 return_data_type: file_function.return_data_type,
                 return_modifiers: file_function.return_modifiers
             }
-            temp_php_functions[file_function.name] = function_def;
-        });
+            temp_php_scopes[file_function.name] = function_def;
+        });*/
     });
 
     php_type_defs = temp_php_type_defs;
-    php_functions = temp_php_functions;
+    php_scopes = temp_php_scopes;
     console.log("php_type_defs", php_type_defs);
-    console.log("php_functions", php_functions);
+    console.log("php_scopes", php_scopes);
 }
 
 function watchFiles() {
