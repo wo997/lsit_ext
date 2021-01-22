@@ -720,26 +720,31 @@ function crawlCodePart(code_part: any) {
                 assignScope(code_part.what, code_part);
                 crawlCodePart(code_part.what);
 
-
-                // or
-                const method_name = code_part.what?.offset?.name;
-
                 let function_def = null;
+                let object_base_type = null;
+                let object_data_type = null;
+                let object_methods = null;
 
                 if (code_part.what.kind === "staticlookup" || code_part.what.kind === "propertylookup") {
                     if (code_part.what.kind === "staticlookup") {
-                        const class_data: ClassScope = ext.php_scopes.classes[code_part.what?.what?.name];
+                        object_data_type = code_part.what?.what?.name;
+                        object_base_type = object_data_type;
+                        const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
                         if (class_data) {
-                            function_def = class_data.static_functions[method_name];
+                            object_methods = class_data.static_functions;
                         }
                     } else if (code_part.what.kind === "propertylookup") {
-                        let data_type = code_part.what?.what?.base_type;
-                        if (data_type) {
-                            const class_data: ClassScope = ext.php_scopes.classes[data_type];
-                            if (class_data) {
-                                function_def = class_data.methods[method_name];
-                            }
+                        object_data_type = code_part.what?.what?.data_type;
+                        object_base_type = code_part.what?.what?.base_type;
+                        const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
+                        if (class_data) {
+                            object_methods = class_data.methods;
                         }
+                    }
+                    const method_name = code_part.what?.offset?.name;
+
+                    if (object_methods && method_name) {
+                        function_def = object_methods[method_name];
                     }
                 } else {
                     const function_name = code_part.what?.name;
@@ -776,6 +781,20 @@ function crawlCodePart(code_part: any) {
                         assignDataType(arg, data_type);
                     }
 
+                    const entity_type_defs: any = {
+                        EntityPies: {
+                            properties: {
+                                paw: { data_type: "string" },
+                                food: { data_type: "number" }
+                            }
+                        },
+                        EntityPiesx: {
+                            properties: {
+                                aaa: { data_type: "string" },
+                            }
+                        }
+                    }
+
                     if (arg_func_def && arg_func_def.modifiers) {
                         if (arg_func_def.modifiers.includes("SQL_query")) {
                             const columns = sql.getSqlColumns(arg.value);
@@ -803,7 +822,11 @@ function crawlCodePart(code_part: any) {
                             let argument2_index = -1;
 
                             const data_type = "Entity" + util.toCamelCase(arg.value);
-                            return_data_type = data_type;
+                            if (return_data_type === "Entity") {
+                                return_data_type = data_type;
+                            } else {
+                                object_data_type = data_type;
+                            }
 
                             for (const arg2 of code_part.arguments) {
                                 argument2_index++;
@@ -823,26 +846,16 @@ function crawlCodePart(code_part: any) {
                                     }
                                 }
                             }
+
+                            addInterestingCodePart(arg);
+                            arg.possible_properties = {};
+                            for (const p of Object.keys(entity_type_defs)) {
+                                arg.possible_properties[util.camelToSnakeCase(p.substring("Entity".length))] = { data_type: "string" };
+                            }
                         }
                         if (arg_func_def.modifiers.includes("entity_prop_name")) {
-                            if (code_part.what.kind === "propertylookup") {
-                                const data_type = code_part.what?.what?.data_type;
-
-                                const entity_type_defs: any = {
-                                    EntityPies: {
-                                        properties: {
-                                            paw: { data_type: "string" },
-                                            food: { data_type: "number" }
-                                        }
-                                    },
-                                    EntityPiesx: {
-                                        properties: {
-                                            aaa: { data_type: "string" },
-                                        }
-                                    }
-                                }
-
-                                const type_def = entity_type_defs[data_type];
+                            if (object_data_type) {
+                                const type_def = entity_type_defs[object_data_type];
 
                                 if (type_def) {
                                     addInterestingCodePart(arg);

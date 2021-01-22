@@ -29,3 +29,20 @@ export function toCamelCase(str: string) {
             return secondMatch.toUpperCase();
         }) : "";
 }
+
+export function kebabToSnakeCase(string: string) {
+    return string.replace(/-([a-z])/gi, function (s, group1) {
+        return group1.toUpperCase();
+    });
+}
+
+export function camelToSnakeCase(str: string) {
+    if (!str) {
+        return "";
+    }
+    str = str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+    if (str[0] === "_") {
+        str = str.substring(1);
+    }
+    return str;
+};
