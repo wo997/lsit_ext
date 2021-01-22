@@ -40,19 +40,19 @@ export const decorate_wo997_annotation = vscode.window.createTextEditorDecoratio
 });
 
 export const decorate_entity = vscode.window.createTextEditorDecorationType({
-    /*color: '#44e',
-    fontWeight: 'bold',*/
-    fontWeight: 'bold',
-    //fontStyle: 'italic',
-    //"outline": "2px solid red",
-    //"border": "2px solid #fff2",
-    //border: "1px solid #fff2",
-    //backgroundColor: '#0004',
-    backgroundColor: '#0581',
-    border: '2px solid #0583',
-    borderRadius: '2px',
-    //textDecoration: "underline",
-    /*backgroundColor: '#024'*/
+    // /*color: '#44e',
+    // fontWeight: 'bold',*/
+    // fontWeight: 'bold',
+    // //fontStyle: 'italic',
+    // //"outline": "2px solid red",
+    // //"border": "2px solid #fff2",
+    // //border: "1px solid #fff2",
+    // //backgroundColor: '#0004',
+    // backgroundColor: '#0581',
+    // border: '2px solid #0583',
+    // borderRadius: '2px',
+    // //textDecoration: "underline",
+    // /*backgroundColor: '#024'*/
 });
 
 const decorate_expression = vscode.window.createTextEditorDecorationType({
