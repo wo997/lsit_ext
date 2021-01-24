@@ -79,7 +79,7 @@ let temp_errors: Array<vscode.Diagnostic> = [];
 let temp_decorations: Array<Decoration> = [];
 
 let file_typedefs: TypeDef[] = [];
-let temp_file_typedefs: TypeDef[] = [];
+let temp_file_type_defs: TypeDef[] = [];
 
 let file_scopes: FileScopes = {
     global: {
@@ -191,18 +191,20 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         return;
     }
 
+    // IMPORTANT, must be the same
     code_part.data_type = data_type;
 
     const is_array = ext.php_type_defs[data_type];
 
     let additional_type = null;
+    let base_type = data_type;
     if (data_type.startsWith("Entity")) {
         additional_type = data_type.substr("Entity".length);
-        data_type = "Entity";
+        base_type = "Entity";
     }
 
-    code_part.additional_type = data_type;
-    code_part.base_type = data_type;
+    code_part.additional_type = additional_type;
+    code_part.base_type = base_type;
 
     if (ArrayDataTypeToSingle(data_type)) {
         code_part.data_type_data = {
@@ -319,7 +321,7 @@ function crawlCodePartComments(comments: any) {
                 if (current_typedef) {
                     const match_end = line.match(/}/);
                     if ((match_end || i == lines.length - 1) && current_typedef) {
-                        temp_file_typedefs.push(current_typedef);
+                        temp_file_type_defs.push(current_typedef);
                         current_typedef = null;
                     }
 
@@ -358,7 +360,7 @@ function crawlCodePartComments(comments: any) {
 
                             if (current_typedef) {
                                 const data_type_obj: any = {
-                                    data_type
+                                    type: data_type
                                 };
                                 if (description) {
                                     data_type_obj.description = description;
@@ -385,30 +387,11 @@ function variableAlike(code_part: any) {
         const comment = comments[comments.length - 1];
 
         if (comment.kind === "commentblock") {
-            if (comment.value.match(/@var .*{.*}/)) {
-                const match_annotation_type = comment.value.match(/@[^\s]*/);
-                if (match_annotation_type) {
-                    const annotation_type = match_annotation_type[0];
-
-                    const start_column = comment.loc.start.column + match_annotation_type.index;
-
-                    temp_decorations.push({
-                        annotation: annotation_type,
-                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + annotation_type.length)
-                    });
-                }
-
-                const match_annotation_data_type = comment.value.match(/\{\w*\}/);
+            if (comment.value.match(/@var +\w+/)) {
+                const match_annotation_data_type = comment.value.match(/(?<= )\w+/);
                 if (match_annotation_data_type) {
-                    const data_type_str = match_annotation_data_type[0];
-                    annotation_data_type = data_type_str.substring(1, data_type_str.length - 1);
-
-                    const start_column = comment.loc.start.column + match_annotation_data_type.index;
-
-                    temp_decorations.push({
-                        annotation_data_type: annotation_data_type,
-                        range: locNumbersToRange(comment.loc.start.line, start_column, comment.loc.start.line, start_column + data_type_str.length)
-                    });
+                    const data_type = match_annotation_data_type[0];
+                    annotation_data_type = data_type;
                 }
             }
         }
@@ -708,7 +691,7 @@ function crawlCodePart(code_part: any) {
                 let object_data_type = null;
                 let object_methods = null;
 
-                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "proplookup") {
+                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "propertylookup") {
                     if (code_part.what.kind === "staticlookup") {
                         object_data_type = code_part.what?.what?.name;
                         object_base_type = object_data_type;
@@ -716,7 +699,7 @@ function crawlCodePart(code_part: any) {
                         if (class_data) {
                             object_methods = class_data.static_functions;
                         }
-                    } else if (code_part.what.kind === "proplookup") {
+                    } else if (code_part.what.kind === "propertylookup") {
                         object_data_type = code_part.what?.what?.data_type;
                         object_base_type = code_part.what?.what?.base_type;
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
@@ -806,7 +789,7 @@ function crawlCodePart(code_part: any) {
 
                                 const arg2_func_def = function_def ? function_def.args[argument2_index] : null;
 
-                                if (arg2_func_def) {
+                                if (arg2_func_def && arg2_func_def.modifiers) {
                                     if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
                                         arg2.pass_scope.arguments = [
                                             data_type,
@@ -870,10 +853,22 @@ function crawlCodePart(code_part: any) {
                             const data = crawlArray(arg);
                             const data_type = "Entity" + util.toTitleCase(arg.scope.register_entity_name);
 
-                            temp_file_typedefs.push({
+                            data.props[arg.scope.register_entity_name + "_id"] = {
+                                type: "number"
+                            };
+
+                            if (data.props) {
+                                for (const prop_name of Object.keys(data.props)) {
+                                    data.props[prop_name].optional = true;
+                                }
+                            }
+
+                            temp_file_type_defs.push({
                                 name: data_type,
                                 props: data.props
                             });
+
+                            delete arg.scope.register_entity_name;
                         }
                     }
                 }
@@ -935,7 +930,7 @@ function crawlCodePart(code_part: any) {
                                 delete missing_props[fake_key.value];
                             }
                             else {
-                                const in_what = util.probablyJSON(data_type) ? "" : ` in ${data_type}}`;
+                                const in_what = util.probablyJSON(data_type) ? "" : ` in ${data_type}`;
                                 temp_errors.push({
                                     message: `${fake_key.value} not found${in_what}`,
                                     severity: vscode.DiagnosticSeverity.Warning,
@@ -955,8 +950,10 @@ function crawlCodePart(code_part: any) {
                     for (const item of code_part.items) {
                         const fake_key = item.key ? item.key : item.value;
                         if (fake_key.kind == "string") {
-                            fake_key.possible_props = missing_props;
-                            addInterestingCodePart(fake_key);
+                            if (Object.keys(missing_props).includes(fake_key.value)) {
+                                fake_key.possible_props = missing_props;
+                                addInterestingCodePart(fake_key);
+                            }
                         }
 
                         assignScope(item, code_part);
@@ -1037,7 +1034,7 @@ function crawlCodePart(code_part: any) {
                 }
             }
             break;
-        case "proplookup":
+        case "propertylookup":
             {
                 const what = code_part.what;
                 const offset = code_part.offset;
@@ -1194,7 +1191,9 @@ function crawlCodePart(code_part: any) {
                     variableAlike(left);
                     crawlCodePart(left);
 
-                    const error = left.data_type && right.data_type && left.data_type != right.data_type;
+                    const error = left.data_typ && left.data_type != "mixed"
+                        && right.data_type && right.data_type != "mixed"
+                        && left.data_type != right.data_type;
                     if (error) {
                         temp_errors.push({
                             message: `Cannot assign ${right.data_type} to ${left.data_type}!`,
@@ -1204,7 +1203,7 @@ function crawlCodePart(code_part: any) {
                     }
 
                     assignDataType(left, right.data_type);
-                    crawlCodePart(left); // why call twice?
+                    crawlCodePart(left);
                     // cause we need to assign the type from the scope first and then compare / display error
                 } else {
                     const expression = code_part.expression;
@@ -1307,7 +1306,7 @@ function cleanupTempVars() {
     temp_errors = [];
     temp_decorations = [];
     temp_interesting_code_parts = [];
-    temp_file_typedefs = [];
+    temp_file_type_defs = [];
     temp_file_scopes = {
         global: {
             functions: {}
@@ -1330,10 +1329,7 @@ export function getFileMetadata(sourceCode: string, file_path: string): ext.File
         return undefined;
     }
 
-    file_typedefs = temp_file_typedefs;
-    if (file_typedefs.length > 0) {
-        console.log(file_typedefs);
-    }
+    file_typedefs = temp_file_type_defs;
     file_scopes = temp_file_scopes;
 
     updateFileErrors(file_path, temp_errors);
@@ -1362,7 +1358,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
 
     const code_decorations = temp_decorations;
     interesting_code_parts = temp_interesting_code_parts;
-    file_typedefs = temp_file_typedefs;
+    file_typedefs = temp_file_type_defs;
     file_scopes = temp_file_scopes;
 
     //console.log(file_functions);
