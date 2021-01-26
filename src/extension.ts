@@ -219,8 +219,6 @@ function indexFiles() {
         return null;
     }
 
-    const project_root: fs.PathLike = vscode.workspace.workspaceFolders[0].uri.path;
-
     const scanFilesInDir: any = (dir: string) => {
         let entity_data_files_sub: any = {};
         fs.readdirSync(filePathClean(dir), { withFileTypes: true }).forEach(file => {
@@ -240,7 +238,7 @@ function indexFiles() {
     }
 
     files_data = {};
-    scanFilesInDir(project_root);
+    scanFilesInDir(workspace_path);
     filesUpdated();
 }
 
@@ -283,6 +281,21 @@ function filesUpdated() {
     php_scopes = temp_php_scopes;
     console.log("php_type_defs", php_type_defs);
     console.log("php_scopes", php_scopes);
+
+    updateTypedefs();
+}
+
+function updateTypedefs() {
+
+    const local_builds_dir = filePathClean(workspace_path + "/local_builds");
+    if (!fs.existsSync(local_builds_dir)) {
+        fs.mkdirSync(local_builds_dir);
+    }
+
+    const typedefs_dir = local_builds_dir + "/typedefs.js";
+    setTimeout(() => {
+        fs.writeFileSync(typedefs_dir, "/**\n* @typedef {{\n* left\n* top}} ActualPositionXXXa\n*/\n");
+    }, 10000);
 }
 
 function watchFiles() {
