@@ -1085,7 +1085,6 @@ function crawlCodePart(code_part: any) {
 
                     if (property.type && property.type.name) {
                         code_part.pass_scope.variables[property.name.name] = property.type.name;
-                        console.log("!!!!!!!", code_part.pass_scope.variables[property.name.name]);
                     }
                 }
             }
