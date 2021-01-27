@@ -287,15 +287,15 @@ function filesUpdated() {
 
 function updateTypedefs() {
 
-    const local_builds_dir = filePathClean(workspace_path + "/local_builds");
-    if (!fs.existsSync(local_builds_dir)) {
-        fs.mkdirSync(local_builds_dir);
-    }
+    // const local_builds_dir = filePathClean(workspace_path + "/local_builds");
+    // if (!fs.existsSync(local_builds_dir)) {
+    //     fs.mkdirSync(local_builds_dir);
+    // }
 
-    const typedefs_dir = local_builds_dir + "/typedefs.js";
-    setTimeout(() => {
-        fs.writeFileSync(typedefs_dir, "/**\n* @typedef {{\n* left\n* top}} ActualPositionXXXa\n*/\n");
-    }, 10000);
+    // const typedefs_dir = local_builds_dir + "/typedefs.js";
+    // setTimeout(() => {
+    //     fs.writeFileSync(typedefs_dir, "/**\n* @typedef {{\n* left\n* top}} ActualPositionXXXa\n*/\n");
+    // }, 10000);
 }
 
 function watchFiles() {

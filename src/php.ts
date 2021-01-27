@@ -675,10 +675,18 @@ function crawlCodePart(code_part: any) {
             {
                 const test = code_part.test;
                 const body = code_part.body;
-                assignScope(test, code_part);
-                assignScope(body, code_part);
-                crawlCodePart(test);
-                crawlCodePart(body);
+                if (test) {
+                    assignScope(test, code_part);
+                }
+                if (body) {
+                    assignScope(body, code_part);
+                }
+                if (test) {
+                    crawlCodePart(test);
+                }
+                if (body) {
+                    crawlCodePart(body);
+                }
             }
             break;
         case "call":
@@ -749,7 +757,9 @@ function crawlCodePart(code_part: any) {
 
                     if (arg_func_def && arg_func_def.modifiers) {
                         if (arg_func_def.modifiers.includes("SQL_query")) {
-                            const columns = sql.getSqlColumns(arg.value);
+                            let query: string = arg.value;
+                            //query = query.replace(/where.*/gi, "");
+                            const columns = sql.getSqlColumns(query);
                             if (columns) {
                                 const props: any = {};
                                 for (const column of columns) {
@@ -901,6 +911,15 @@ function crawlCodePart(code_part: any) {
                 }
             }
             break;
+        case "unary":
+            {
+                const what = code_part.what;
+                if (what) {
+                    assignScope(what, code_part);
+                    crawlCodePart(what);
+                }
+            }
+            break;
         case "array":
             {
                 const data_type = code_part.data_type;
@@ -1028,6 +1047,12 @@ function crawlCodePart(code_part: any) {
                 }
                 else {
                     data_type = code_part.scope.variables[code_part.name];
+                    if (!data_type) {
+                        if (code_part.name === "this" && code_part.scope.class) {
+                            data_type = code_part.scope.class;
+                        }
+                    }
+
                     if (data_type) {
                         assignDataType(code_part, data_type);
                     }
@@ -1045,6 +1070,23 @@ function crawlCodePart(code_part: any) {
                     what.leadingComments = code_part.leadingComments;
                     crawlCodePart(what);
                     crawlCodePart(offset);
+                }
+            }
+            break;
+        case "propertystatement":
+            {
+                const properties = code_part.properties;
+                for (const property of properties) {
+                    if (!property) {
+                        continue;
+                    }
+                    assignScope(property, code_part);
+                    assignScope(property, code_part);
+
+                    if (property.type && property.type.name) {
+                        code_part.pass_scope.variables[property.name.name] = property.type.name;
+                        console.log("!!!!!!!", code_part.pass_scope.variables[property.name.name]);
+                    }
                 }
             }
             break;

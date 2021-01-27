@@ -1,0 +1,5 @@
+/**
+* @typedef {{
+* left
+* top}} ActualPositionXXXa
+*/
