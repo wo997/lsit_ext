@@ -24,7 +24,7 @@ export function getSqlColumns(sql: string) {
         }
     }
     catch (e) {
-        console.log("SQL error", e);
+        console.log("SQL error");//, e);
     }
 
     return undefined;

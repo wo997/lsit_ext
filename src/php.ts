@@ -360,7 +360,7 @@ function crawlCodePartComments(comments: any) {
 
                             if (current_typedef) {
                                 const data_type_obj: any = {
-                                    type: data_type
+                                    data_type
                                 };
                                 if (description) {
                                     data_type_obj.description = description;

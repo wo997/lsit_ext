@@ -281,21 +281,6 @@ function filesUpdated() {
     php_scopes = temp_php_scopes;
     console.log("php_type_defs", php_type_defs);
     console.log("php_scopes", php_scopes);
-
-    updateTypedefs();
-}
-
-function updateTypedefs() {
-
-    // const local_builds_dir = filePathClean(workspace_path + "/local_builds");
-    // if (!fs.existsSync(local_builds_dir)) {
-    //     fs.mkdirSync(local_builds_dir);
-    // }
-
-    // const typedefs_dir = local_builds_dir + "/typedefs.js";
-    // setTimeout(() => {
-    //     fs.writeFileSync(typedefs_dir, "/**\n* @typedef {{\n* left\n* top}} ActualPositionXXXa\n*/\n");
-    // }, 10000);
 }
 
 function watchFiles() {
@@ -306,7 +291,7 @@ function watchFiles() {
 
         filesUpdated();
 
-        vscode.window.showInformationMessage("LSIT indexed changes in " + uri.path);
+        //vscode.window.showInformationMessage("LSIT indexed changes in " + uri.path);
     }
     watcher.onDidCreate(anyFilechange);
     watcher.onDidChange(anyFilechange);
