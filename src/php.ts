@@ -756,8 +756,9 @@ function crawlCodePart(code_part: any) {
                     }
 
                     if (arg_func_def && arg_func_def.modifiers) {
-                        if (arg_func_def.modifiers.includes("SQL_query")) {
-                            let query: string = arg.value;
+                        if (arg_func_def.modifiers.includes("SQL_query") && arg.raw && arg.raw.length > 2) {
+                            // why not arg.value? it can be of encapsed kind, thus not ezy to parse, string is better
+                            let query: string = arg.raw.substring(1, arg.raw.length - 1);
                             //query = query.replace(/where.*/gi, "");
                             const columns = sql.getSqlColumns(query);
                             if (columns) {

@@ -7,6 +7,10 @@ const parser = new Parser()
 // opt is optional
 
 export function getSqlColumns(sql: string) {
+    if (typeof sql !== "string") {
+        return undefined;
+    }
+
     try {
         const ast = parser.astify(sql, opt);
         if (ast.type == "select") {
