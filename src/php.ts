@@ -948,8 +948,10 @@ function crawlCodePart(code_part: any) {
                         if (fake_key.kind == "string") {
                             if (missing_props[fake_key.value]) {
                                 delete missing_props[fake_key.value];
-                            }
-                            else {
+                            } else {
+                                fake_key.possible_props = missing_props;
+                                addInterestingCodePart(fake_key);
+
                                 const in_what = util.probablyJSON(data_type) ? "" : ` in ${data_type}`;
                                 temp_errors.push({
                                     message: `${fake_key.value} not found${in_what}`,
@@ -968,14 +970,6 @@ function crawlCodePart(code_part: any) {
                     }
 
                     for (const item of code_part.items) {
-                        const fake_key = item.key ? item.key : item.value;
-                        if (fake_key.kind == "string") {
-                            if (Object.keys(missing_props).includes(fake_key.value)) {
-                                fake_key.possible_props = missing_props;
-                                addInterestingCodePart(fake_key);
-                            }
-                        }
-
                         assignScope(item, code_part);
 
                         if (item.key && item.key.kind === "string" && item.value) {
