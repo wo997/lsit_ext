@@ -212,8 +212,9 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
         };
     } else {
         if (util.probablyJSON(data_type)) {
-            // TODO: try catch?
-            code_part.data_type_data = JSON.parse(data_type);
+            try {
+                code_part.data_type_data = JSON.parse(data_type);
+            } catch (e) { }
         } else {
             const data_type_data = ext.php_type_defs[data_type];
             if (data_type_data) {
@@ -387,8 +388,9 @@ function variableAlike(code_part: any) {
         const comment = comments[comments.length - 1];
 
         if (comment.kind === "commentblock") {
-            if (comment.value.match(/@var +\w+/)) {
-                const match_annotation_data_type = comment.value.match(/(?<= )\w+/);
+            if (comment.value.match(/@var +[^@\s]+/)) {
+                const match_annotation_data_type = comment.value.match(/(?<= )[^@\s]+/);
+                //console.log(match_annotation_data_type);
                 if (match_annotation_data_type) {
                     const data_type = match_annotation_data_type[0];
                     annotation_data_type = data_type;
@@ -1041,6 +1043,7 @@ function crawlCodePart(code_part: any) {
                 const value = code_part.value;
 
                 if (value) {
+                    variableAlike(value);
                     assignScope(value, code_part)
                     crawlCodePart(value);
                 }
