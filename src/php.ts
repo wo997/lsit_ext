@@ -290,7 +290,7 @@ function crawlCodePartComments(comments: any) {
                         });
                     }
 
-                    const match_typedef = line.match(/(?<=@typedef +)[^\s]*(?=.*{)/);
+                    const match_typedef = line.match(/(?<=@typedef +)[^\s]*(?=.*?\{)/);
                     if (match_typedef) {
                         const typedef = match_typedef[0];
 
@@ -307,7 +307,7 @@ function crawlCodePartComments(comments: any) {
                         });
                     }
 
-                    const match_start = line.match(/{/);
+                    const match_start = line.match(/\{/);
                     if (match_start) {
                         const start_column = actual_left + match_start.index;
 
@@ -430,7 +430,7 @@ function beforeFunction(code_part: any): Function | undefined {
                 const actual_left = i === 0 ? comment.loc.start.column : 0;
                 const actual_line = comment.loc.start.line + i;
 
-                const match_param_line = line.match(/@param +[^\s]* +\$.+/);
+                const match_param_line = line.match(/@param +.*? +\$.+/);
                 if (match_param_line) {
                     const [param_ann, data_type, var_name] = match_param_line[0].replace(/ +/, " ").split(" ");
 
@@ -450,7 +450,7 @@ function beforeFunction(code_part: any): Function | undefined {
                     }
 
                     let modifiers: Array<any> = [];
-                    const match_modifiers = [...line.matchAll(/\!.+/g)];
+                    const match_modifiers = [...line.matchAll(/\!\w+/g)];
 
                     if (match_modifiers) {
                         for (const match_modifier of match_modifiers) {
@@ -482,7 +482,7 @@ function beforeFunction(code_part: any): Function | undefined {
                     const [param_ann, data_type] = match_return_line[0].replace(/ +/, " ").split(" ");
 
                     let modifiers: Array<any> = [];
-                    const match_modifiers = [...line.matchAll(/\!.+/g)];
+                    const match_modifiers = [...line.matchAll(/\!\w+/g)];
 
                     if (match_modifiers) {
                         for (const match_modifier of match_modifiers) {
@@ -1545,7 +1545,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
         const line = sourceCodeArr[line_id];
 
         if (line_id === 0) {
-            const match_annotation = line.match(/(<\?php \/\/.*\[.*\])/);
+            const match_annotation = line.match(/(<\?php \/\/.*?\[.*?\])/);
 
             if (match_annotation !== null) {
                 const slash_ind = line.indexOf("//");
