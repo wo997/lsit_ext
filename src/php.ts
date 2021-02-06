@@ -689,6 +689,22 @@ function crawlCodePart(code_part: any) {
                 }
             }
             break;
+        case "try":
+            {
+                const body = code_part.body;
+                const catches = code_part.catches;
+                if (body) {
+                    assignScope(body, code_part);
+                    crawlCodePart(body);
+                }
+                if (catches) {
+                    for (const catching of catches) {
+                        assignScope(catching, code_part);
+                        crawlCodePart(catching);
+                    }
+                }
+            }
+            break;
         case "call":
             {
                 assignScope(code_part.what, code_part);
