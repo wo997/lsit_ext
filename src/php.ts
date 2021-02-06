@@ -807,6 +807,11 @@ function crawlCodePart(code_part: any) {
                                             "string"
                                         ];
                                     }
+
+                                    if (arg2_func_def.modifiers.includes("entity_props")) {
+                                        assignDataType(arg2, data_type);
+                                        addInterestingCodePart(arg2);
+                                    }
                                 }
                             }
 
