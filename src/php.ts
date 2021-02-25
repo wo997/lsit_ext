@@ -452,7 +452,7 @@ function beforeFunction(code_part: any): Function | undefined {
                     }
 
                     let modifiers: Array<any> = [];
-                    const match_modifiers = [...line.matchAll(/\!\w+/g)];
+                    const match_modifiers = [...line.matchAll(/\![^\s]+/g)];
 
                     if (match_modifiers) {
                         for (const match_modifier of match_modifiers) {
@@ -484,7 +484,7 @@ function beforeFunction(code_part: any): Function | undefined {
                     const [param_ann, data_type] = match_return_line[0].replace(/ +/, " ").split(" ");
 
                     let modifiers: Array<any> = [];
-                    const match_modifiers = [...line.matchAll(/\!\w+/g)];
+                    const match_modifiers = [...line.matchAll(/\![^\s]+/g)];
 
                     if (match_modifiers) {
                         for (const match_modifier of match_modifiers) {
