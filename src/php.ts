@@ -388,11 +388,17 @@ function variableAlike(code_part: any) {
         const comment = comments[comments.length - 1];
 
         if (comment.kind === "commentblock") {
-            if (comment.value.match(/@var +[^@\s]+/)) {
-                const match_annotation_data_type = comment.value.match(/(?<= )[^@\s]+/);
-                //console.log(match_annotation_data_type);
+            if (comment.value.match(/@var +[\w\s\[\]]+/)) {
+                const match_annotation_data_type = comment.value.match(/(?<= )[^@\*]+/);
+
                 if (match_annotation_data_type) {
-                    const data_type = match_annotation_data_type[0];
+                    const check_compound_type = match_annotation_data_type[0].replace(/\s{2,}/g, " ").split(" ");
+                    let data_type: string = check_compound_type[0];
+
+                    if (data_type.startsWith("Entity") && check_compound_type[1]) {
+                        data_type = data_type.replace("Entity", "Entity" + check_compound_type[1]);
+                    }
+
                     annotation_data_type = data_type;
                 }
             }
