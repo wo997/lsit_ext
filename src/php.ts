@@ -683,17 +683,24 @@ function crawlCodePart(code_part: any) {
             {
                 const test = code_part.test;
                 const body = code_part.body;
+                const alternate = code_part.alternate;
                 if (test) {
                     assignScope(test, code_part);
                 }
                 if (body) {
                     assignScope(body, code_part);
                 }
+                if (alternate) {
+                    assignScope(alternate, code_part);
+                }
                 if (test) {
                     crawlCodePart(test);
                 }
                 if (body) {
                     crawlCodePart(body);
+                }
+                if (alternate) {
+                    crawlCodePart(alternate);
                 }
             }
             break;
