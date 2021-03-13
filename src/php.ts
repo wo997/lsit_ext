@@ -1095,12 +1095,38 @@ function crawlCodePart(code_part: any) {
             {
                 const what = code_part.what;
                 const offset = code_part.offset;
+
+                const getVarId = () => { return what.data_type + "::" + offset.name };
+
                 if (what && offset) {
+                    variableAlike(offset);
                     assignScope(what, code_part);
                     assignScope(offset, code_part);
+                    if (code_part.data_type) {
+                        offset.data_type = code_part.data_type;
+                    }
 
                     what.leadingComments = code_part.leadingComments;
+                    if (what.kind === "variable") {
+                        if (what.data_type && offset.data_type && offset.name) {
+                            code_part.scope.variables[getVarId()] = offset.data_type;
+                        }
+                    }
+                }
+
+                if (what) {
                     crawlCodePart(what);
+                }
+
+                if (offset) {
+                    const data_type = code_part.scope.variables[getVarId()];
+
+                    assignDataType(code_part, data_type);
+                    assignDataType(offset, data_type);
+
+                }
+
+                if (offset) {
                     crawlCodePart(offset);
                 }
             }
