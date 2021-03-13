@@ -1139,10 +1139,15 @@ function crawlCodePart(code_part: any) {
                         continue;
                     }
                     assignScope(property, code_part);
-                    assignScope(property, code_part);
+                    property.leadingComments = code_part.leadingComments;
+                    variableAlike(property);
 
+                    const var_id = property.scope.class + "::" + property.name.name;
                     if (property.type && property.type.name) {
-                        code_part.pass_scope.variables[property.name.name] = property.type.name;
+                        code_part.pass_scope.variables[var_id] = property.type.name;
+                    }
+                    if (property.data_type) {
+                        code_part.pass_scope.variables[var_id] = property.data_type;
                     }
                 }
             }
