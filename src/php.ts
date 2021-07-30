@@ -722,37 +722,39 @@ function crawlCodePart(code_part: any) {
             break;
         case "call":
             {
-                assignScope(code_part.what, code_part);
-                crawlCodePart(code_part.what);
+                const what = code_part.what;
+
+                assignScope(what, code_part);
+                crawlCodePart(what);
 
                 let function_def = null;
                 let object_base_type = null;
                 let object_data_type = null;
                 let object_methods = null;
 
-                if (code_part.what.kind === "staticlookup" || code_part.what.kind === "propertylookup") {
-                    if (code_part.what.kind === "staticlookup") {
-                        object_data_type = code_part.what?.what?.name;
+                if (what.kind === "staticlookup" || what.kind === "propertylookup") {
+                    if (what.kind === "staticlookup") {
+                        object_data_type = what?.what?.name;
                         object_base_type = object_data_type;
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
                         if (class_data) {
                             object_methods = class_data.static_functions;
                         }
-                    } else if (code_part.what.kind === "propertylookup") {
-                        object_data_type = code_part.what?.what?.data_type;
-                        object_base_type = code_part.what?.what?.base_type;
+                    } else if (what.kind === "propertylookup") {
+                        object_data_type = what?.what?.data_type;
+                        object_base_type = what?.what?.base_type;
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
                         if (class_data) {
                             object_methods = class_data.methods;
                         }
                     }
-                    const method_name = code_part.what?.offset?.name;
+                    const method_name = what?.offset?.name;
 
                     if (object_methods && method_name) {
                         function_def = object_methods[method_name];
                     }
                 } else {
-                    const function_name = code_part.what?.name;
+                    const function_name = what?.name;
                     function_def = ext.php_scopes.global.functions[function_name];
                 }
 
@@ -779,7 +781,7 @@ function crawlCodePart(code_part: any) {
                         continue;
                     }
 
-                    const arg_func_def = function_def ? function_def.args[argument_index] : null;
+                    const arg_func_def = function_def && function_def.args ? function_def.args[argument_index] : null;
 
                     if (arg_func_def) {
                         const data_type = arg_func_def.data_type;
@@ -812,6 +814,27 @@ function crawlCodePart(code_part: any) {
                                 }
                             }
                         }
+
+                        if (return_modifiers && what.what?.base_type === "Entity") {
+                            const get_entity = return_modifiers.find(e => e.startsWith("get_entity"));
+                            if (get_entity) {
+                                const data_type = what.what.data_type;
+                                if (data_type) {
+                                    const type_def = ext.php_type_defs[data_type];
+                                    if (type_def) {
+                                        const prop_data = type_def.props[arg.value];
+                                        if (prop_data) {
+                                            const type = prop_data.type;
+                                            const data_type = "Entity" + util.toTitleCase(type.replace(/\[\]/g, "")) + type.replace(/[^\[\]]/g, "");
+                                            return_data_type = data_type;
+                                        }
+                                    }
+                                }
+                            } else {
+                                // log(":(", return_modifiers);
+                            }
+                        }
+
                         if (arg_func_def.modifiers.includes("entity_name")) {
                             let argument2_index = -1;
 
