@@ -549,10 +549,7 @@ function functionAlike(code_part: any) {
     const function_data = beforeFunction(code_part);
 
     let used_scope_arguments = false;
-    let argument_index = -1;
-    args.forEach((arg: any) => {
-        argument_index++;
-
+    args.forEach((arg: any, argument_index: number) => {
         assignScope(arg, code_part);
 
         if (!arg.data_type && code_part.scope.arguments[argument_index]) {
@@ -836,8 +833,6 @@ function crawlCodePart(code_part: any) {
                         }
 
                         if (arg_func_def.modifiers.includes("entity_name")) {
-                            let argument2_index = -1;
-
                             const data_type = "Entity" + util.toTitleCase(arg.value);
                             if (return_data_type === "Entity") {
                                 return_data_type = data_type;
@@ -845,6 +840,7 @@ function crawlCodePart(code_part: any) {
                                 object_data_type = data_type;
                             }
 
+                            let argument2_index = -1;
                             for (const arg2 of code_part.arguments) {
                                 argument2_index++;
 
@@ -857,8 +853,7 @@ function crawlCodePart(code_part: any) {
                                 if (arg2_func_def && arg2_func_def.modifiers) {
                                     if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
                                         arg2.pass_scope.arguments = [
-                                            data_type,
-                                            "string"
+                                            data_type
                                         ];
                                     }
 
@@ -952,6 +947,13 @@ function crawlCodePart(code_part: any) {
 
                 if (return_data_type) {
                     assignDataType(code_part, return_data_type);
+                }
+
+                for (const arg of code_part.arguments) {
+                    if (!arg) {
+                        continue;
+                    }
+                    arg.pass_scope.arguments = [];
                 }
             }
             break;
