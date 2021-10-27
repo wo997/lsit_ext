@@ -159,7 +159,7 @@ export function getCompletionItems(document: vscode.TextDocument, position: vsco
 function createScope(code_part: any) {
     const new_scope: any = {
         variables: {},
-        arguments: [],
+        arguments: {},
     };
 
     if (code_part.scope) {
@@ -566,7 +566,7 @@ function functionAlike(code_part: any) {
 
     if (used_scope_arguments) {
         // just in case, only a single function should use these
-        code_part.scope.arguments = [];
+        code_part.scope.arguments = {};
     }
 
     assignScope(body, code_part);
@@ -724,7 +724,7 @@ function crawlCodePart(code_part: any) {
                 assignScope(what, code_part);
                 crawlCodePart(what);
 
-                let function_def = null;
+                let function_def: any = null;
                 let object_base_type = null;
                 let object_data_type = null;
                 let object_methods = null;
@@ -840,29 +840,24 @@ function crawlCodePart(code_part: any) {
                                 object_data_type = data_type;
                             }
 
-                            let argument2_index = -1;
-                            for (const arg2 of code_part.arguments) {
-                                argument2_index++;
-
+                            code_part.arguments.forEach((arg2: any, index: number) => {
                                 if (!arg2 || arg2 === arg) {
-                                    continue;
+                                    return;
                                 }
-
-                                const arg2_func_def = function_def ? function_def.args[argument2_index] : null;
-
+                                const arg2_func_def = function_def ? function_def.args[index] : null;
                                 if (arg2_func_def && arg2_func_def.modifiers) {
-                                    if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
-                                        arg2.pass_scope.arguments = [
-                                            data_type
-                                        ];
+                                    if (arg2_func_def.modifiers.includes("entity_setter_callback")
+                                        || arg2_func_def.modifiers.includes("entity_getter_callback")
+                                        || arg2_func_def.modifiers.includes("entity_save_callback")
+                                        || arg2_func_def.modifiers.includes("entity_props_set_callback")) {
+                                        arg2.pass_scope.arguments[0] = data_type;
                                     }
-
                                     if (arg2_func_def.modifiers.includes("entity_props")) {
                                         assignDataType(arg2, data_type);
                                         addInterestingCodePart(arg2);
                                     }
                                 }
-                            }
+                            });
 
                             arg.possible_props = ext.php_entity_names_as_prop;
                             addInterestingCodePart(arg);
@@ -873,6 +868,22 @@ function crawlCodePart(code_part: any) {
                                 if (type_def) {
                                     arg.possible_props = type_def.props;
                                     addInterestingCodePart(arg);
+
+                                    code_part.arguments.forEach((arg2: any, index: number) => {
+                                        if (!arg2 || arg2 === arg) {
+                                            return;
+                                        }
+                                        const arg2_func_def = function_def ? function_def.args[index] : null;
+                                        if (arg2_func_def && arg2_func_def.modifiers) {
+                                            if (arg2_func_def.modifiers.includes("entity_setter_callback")) {
+                                                const prop_data = type_def.props[arg.value];
+                                                if (prop_data) {
+                                                    arg2.pass_scope.arguments[1] = "Entity" + util.toTitleCase(prop_data.type);
+                                                }
+                                            }
+                                        }
+                                    });
+
                                 }
                             }
                         }
