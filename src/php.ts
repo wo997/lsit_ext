@@ -1331,7 +1331,7 @@ function crawlCodePart(code_part: any) {
                     variableAlike(left);
                     crawlCodePart(left);
 
-                    const error = left.data_typ && left.data_type != "mixed"
+                    const error = left.data_type && left.data_type != "mixed"
                         && right.data_type && right.data_type != "mixed"
                         && left.data_type != right.data_type;
                     if (error) {
@@ -1387,11 +1387,67 @@ function crawlCodePart(code_part: any) {
                         }
                     }
 
-                    if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
-                        if (offset.data_type) {
-                            //assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
-                            assignDataType(offset.parent_code_part, offset.data_type);
+                    if (offset.data_type) {
+                        //assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                        assignDataType(code_part, offset.data_type);
+                    }
+                    // if (offset.parent_code_part && offset.parent_code_part.kind == "offsetlookup") {
+                    //     if (offset.data_type) {
+                    //         //assignDataType(offset.parent_code_part, offset.data_type, { hoverable: false });
+                    //         assignDataType(offset.parent_code_part, offset.data_type);
+                    //     }
+                    // }
+                }
+            }
+            break;
+        case "staticlookup":
+            {
+
+                const what = code_part.what;
+                const offset = code_part.offset;
+                if (what && offset) {
+                    assignScope(what, code_part);
+                    assignScope(offset, code_part);
+
+                    crawlCodePart(what);
+
+                    const classname = code_part.scope.class;
+                    const var_name = offset.name;
+                    log([classname, var_name, what.kind]);
+                    if (what.kind === "selfreference" && classname && var_name) {
+                        addInterestingCodePart(offset);
+
+                        //code_part.scope.variables[code_part.name];
+                        log("???", ">>>>>", classname + "::" + var_name, code_part.scope.variables[classname + "::" + var_name]);
+
+                        const data_type = code_part.scope.variables[classname + "::" + var_name];
+
+                        if (data_type) {
+                            log(data_type, offset);
+                            assignDataType(offset, data_type);
                         }
+
+                        // if (what.data_type_data && what.data_type_data.props) {
+                        //     offset.possible_props = what.data_type_data.props;
+                        //     addInterestingCodePart(offset);
+
+                        //     const offset_value = offset.value;
+                        //     const offset_prop = offset.possible_props[offset_value];
+                        //     if (offset_prop) {
+                        //         assignDataType(offset, offset_prop.data_type);
+                        //     }
+                        // } else {
+                        //     // we could restrict it to numbers but it's unnecessary
+                        //     // maybe a warning would be just fine
+                        //     const child_data_type = ArrayDataTypeToSingle(what.data_type);
+                        //     if (child_data_type) {
+                        //         assignDataType(offset, child_data_type);
+                        //     }
+                        // }
+                    }
+
+                    if (offset.data_type) {
+                        assignDataType(code_part, offset.data_type);
                     }
                 }
             }
