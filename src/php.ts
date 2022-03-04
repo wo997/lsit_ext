@@ -192,7 +192,7 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
     }
 
     // IMPORTANT, must be the same
-    code_part.data_type = data_type;
+    code_part.data_type = getSpecificDataType(code_part.data_type, data_type);
 
     const is_array = ext.php_type_defs[data_type];
 
@@ -230,6 +230,32 @@ function assignDataType(code_part: any, data_type: string, options: any = {}) {
 
 function assignModifiers(code_part: any, modifiers: Array<any>) {
     code_part.modifiers = modifiers;
+}
+
+function isDataTypeAny(data_type: string) {
+    return ["mixed", "any", "*", "", null, undefined].includes(data_type);
+}
+
+function getSpecificDataType(from: string, to: string) {
+    if (!to) {
+        return from;
+    }
+    if (isDataTypeAny(from)) {
+        return to;
+    }
+    if (from === "array" && to.includes("[]")) {
+        return to;
+    }
+    if (from.includes("Entity") && to.includes("Entity")) {
+        if (from.includes(to)) {
+            return from;
+        }
+        if (to.includes(from)) {
+            return to;
+        }
+        return "Entity";
+    }
+    return from;
 }
 
 function addInterestingCodePart(code_part: any) {
@@ -574,7 +600,7 @@ function functionAlike(code_part: any) {
 
     if (function_data) {
         if (function_data && body.scope.return_data_type) {
-            function_data.return_data_type = body.scope.return_data_type;
+            function_data.return_data_type = getSpecificDataType(function_data.return_data_type, body.scope.return_data_type);
         }
 
         if (code_part.scope.class) {
@@ -1208,7 +1234,7 @@ function crawlCodePart(code_part: any) {
                     assignScope(code_part.expr, code_part);
                     crawlCodePart(code_part.expr);
                     if (code_part.expr.data_type) {
-                        code_part.scope.return_data_type = code_part.expr.data_type;
+                        code_part.scope.return_data_type = getSpecificDataType(code_part.scope.return_data_type, code_part.expr.data_type);
                     }
                 }
             }
@@ -1331,9 +1357,11 @@ function crawlCodePart(code_part: any) {
                     variableAlike(left);
                     crawlCodePart(left);
 
-                    const error = left.data_type && left.data_type != "mixed"
-                        && right.data_type && right.data_type != "mixed"
-                        && left.data_type != right.data_type;
+                    const error = left.data_type && !isDataTypeAny(left.data_type)
+                        && right.data_type && !isDataTypeAny(right.data_type)
+                        && right.data_type !== getSpecificDataType(left.data_type, right.data_type);
+
+                    // log(left.data_type, right.data_type, getSpecificDataType(left.data_type, right.data_type));
                     if (error) {
                         temp_errors.push({
                             message: `Cannot assign ${right.data_type} to ${left.data_type}!`,
@@ -1413,17 +1441,17 @@ function crawlCodePart(code_part: any) {
 
                     const classname = code_part.scope.class;
                     const var_name = offset.name;
-                    log([classname, var_name, what.kind]);
+                    // log([classname, var_name, what.kind]);
                     if (what.kind === "selfreference" && classname && var_name) {
                         addInterestingCodePart(offset);
 
                         //code_part.scope.variables[code_part.name];
-                        log("???", ">>>>>", classname + "::" + var_name, code_part.scope.variables[classname + "::" + var_name]);
+                        // log("???", ">>>>>", classname + "::" + var_name, code_part.scope.variables[classname + "::" + var_name]);
 
                         const data_type = code_part.scope.variables[classname + "::" + var_name];
 
                         if (data_type) {
-                            log(data_type, offset);
+                            // log(data_type, offset);
                             assignDataType(offset, data_type);
                         }
 
