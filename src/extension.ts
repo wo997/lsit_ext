@@ -19,6 +19,7 @@ export interface FileData {
 export let files_data: any = {};
 export let php_type_defs: any = {};
 export let php_entity_names_as_prop: any = {};
+export let php_table_names_as_prop: any = {};
 export let php_scopes: php.FileScopes = {
     global: {
         functions: new Map()
@@ -221,6 +222,7 @@ function indexFiles() {
 
     const scanFilesInDir: any = (dir: string) => {
         let entity_data_files_sub: any = {};
+        let table_data_files_sub: any = {};
         fs.readdirSync(filePathClean(dir), { withFileTypes: true }).forEach(file => {
             const file_path = `${dir}/${file.name}`;
 
@@ -228,13 +230,15 @@ function indexFiles() {
                 if (file.name.charAt(0) == "." || ["vendor", "builds", "prebuilds", "settings", "uploads"].includes(file.name)) {
                     return;
                 }
-                Object.assign(entity_data_files_sub, scanFilesInDir(file_path));
+                const res = scanFilesInDir(file_path);
+                Object.assign(entity_data_files_sub, res.entity_data_files_sub);
+                Object.assign(table_data_files_sub, res.table_data_files_sub);
             } else {
                 updateFile(file_path);
             }
         });
 
-        return entity_data_files_sub;
+        return { entity_data_files_sub, table_data_files_sub };
     }
 
     files_data = {};
@@ -247,6 +251,7 @@ function filesUpdated() {
 
     let temp_php_type_defs: any = {};
     let temp_php_entity_names_as_prop: any = {};
+    let temp_php_table_names_as_prop: any = {};
 
     let temp_php_scopes: php.FileScopes = {
         global: {
@@ -271,16 +276,20 @@ function filesUpdated() {
             if (type_def.name.startsWith("Entity")) {
                 temp_php_entity_names_as_prop[util.camelToSnakeCase(type_def.name.substring("Entity".length))] = { data_type: "string" };
             }
+            if (type_def.name.startsWith("Table")) {
+                temp_php_table_names_as_prop[util.camelToSnakeCase(type_def.name.substring("Table".length))] = { data_type: "string" };
+            }
         });
 
         util.deepAssign(temp_php_scopes, file_data.scopes);
     });
 
     php_entity_names_as_prop = temp_php_entity_names_as_prop;
+    php_table_names_as_prop = temp_php_table_names_as_prop;
     php_type_defs = temp_php_type_defs;
     php_scopes = temp_php_scopes;
-    console.log("php_type_defs", php_type_defs);
-    console.log("php_scopes", php_scopes);
+    // console.log("php_type_defs", php_type_defs);
+    // console.log("php_scopes", php_scopes);
 }
 
 function watchFiles() {

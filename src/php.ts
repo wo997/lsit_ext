@@ -916,6 +916,10 @@ function crawlCodePart(code_part: any) {
                         if (arg_func_def.modifiers.includes("register_entity_name")) {
                             arg.scope.register_entity_name = arg.value;
                         }
+                        if (arg_func_def.modifiers.includes("register_table_name")) {
+                            arg.scope.register_table_name = arg.value;
+                            log("TABLE", arg.value);
+                        }
                     }
 
                     if (arg.data_type === "RegisterEntityData") {
@@ -938,6 +942,7 @@ function crawlCodePart(code_part: any) {
 
                                 if (is_array) {
                                     if (item.value) {
+                                        // i hate what i did here XD going like "Table" (below) would be so much better
                                         sub_data.push(crawlArray(item.value));
                                     }
                                 } else {
@@ -949,7 +954,6 @@ function crawlCodePart(code_part: any) {
 
                             return sub_data;
                         }
-
 
                         if (arg.scope.register_entity_name) {
                             const data = crawlArray(arg);
@@ -965,6 +969,7 @@ function crawlCodePart(code_part: any) {
                                 }
                             }
 
+                            // console.log("HHHH", data.props);
                             temp_file_type_defs.push({
                                 name: data_type,
                                 props: data.props
@@ -973,6 +978,69 @@ function crawlCodePart(code_part: any) {
                             delete arg.scope.register_entity_name;
                         }
                     }
+                    if (arg.data_type === "DBTableColumn[]") {
+                        if (arg.scope.register_table_name) {
+                            // console.log("BBBBBBBBB", arg);
+
+                            const props: any = {};
+
+                            arg.items?.forEach((item: any) => {
+                                const name = item.value.items.find((e: any) => e.key?.value === "name")?.value?.value;
+                                console.log("PP", name);
+                                if (!name) {
+                                    return
+                                }
+
+                                // console.log("CIPA", name_item.key?.value);
+                                const prop_detail: any = {};
+                                item.value.items.map((e: any) => { prop_detail[e.key.value] = e.value.value });
+                                prop_detail.optional = true;
+                                props[name] = prop_detail;
+                                // console.log("HHH", prop_detail)
+                                // console.log("ZZZZ", x.value, arg.items.map((e: any) => e.value), arg.items);
+                                // console.log("MMMM", name_item, "=>", props[name_item.value.value]);
+                            })
+                            const data_type = "Table" + util.toTitleCase(arg.scope.register_table_name);
+
+                            // const props: any = {};
+                            // const items = arg.items[0]?.value?.items;
+
+                            // const name_item = items.find((e: any) => e.key?.value === "name");
+                            // console.log("PP", name_item, "OOO", items);
+                            // if (!name_item) {
+                            //     return
+                            // }
+
+                            // items?.forEach((item: any) => {
+                            //     // console.log("CIPA", name_item.key?.value);
+                            //     const prop_detail: any = {};
+                            //     items.map((e: any) => { prop_detail[e.key.value] = e.value.value });
+                            //     prop_detail.optional = true;
+                            //     props[item.value.value] = prop_detail;
+                            //     console.log("HHH", prop_detail)
+                            //     // console.log("ZZZZ", x.value, arg.items.map((e: any) => e.value), arg.items);
+                            //     // console.log("MMMM", name_item, "=>", props[name_item.value.value]);
+                            // })
+                            // const data_type = "Table" + util.toTitleCase(arg.scope.register_table_name);
+
+                            // console.log("RRRR", props);
+
+                            // log("AAAAAAAAAAAAAAAA", {
+                            //     name: data_type,
+                            //     props: data.props
+                            // });
+                            temp_file_type_defs.push({
+                                name: data_type,
+                                props
+                            });
+
+                            delete arg.scope.register_table_name;
+                        }
+
+                    }
+
+
+
                 }
 
                 for (const arg of code_part.arguments) {
@@ -1568,7 +1636,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
 
     const d0 = new Date();
     const php_parsed = php_parser.parseCode(sourceCode);
-    console.log("Parse AST time: " + ((new Date()).getTime() - d0.getTime()).toString());
+    // console.log("Parse AST time: " + ((new Date()).getTime() - d0.getTime()).toString());
 
     const d = new Date();
     try {
@@ -1577,8 +1645,8 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
         console.error('Code data errors:', e);
         return;
     }
-    console.log("Parse code time " + ((new Date()).getTime() - d.getTime()).toString());
-    console.log("php_parsed", php_parsed);
+    // console.log("Parse code time " + ((new Date()).getTime() - d.getTime()).toString());
+    // console.log("php_parsed", php_parsed);
 
     const code_decorations = temp_decorations;
     interesting_code_parts = temp_interesting_code_parts;
@@ -1586,7 +1654,7 @@ export function decorateFile(sourceCode: string, editor: vscode.TextEditor, file
     file_scopes = temp_file_scopes;
 
     //console.log(file_functions);
-    //console.log(file_typedefs);
+    // console.log("TYPEDEFS", file_typedefs);
     //console.log(code_decorations);
 
     let entity_decorations: vscode.DecorationOptions[] = [];
