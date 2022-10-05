@@ -888,6 +888,30 @@ function crawlCodePart(code_part: any) {
                             arg.possible_props = ext.php_entity_names_as_prop;
                             addInterestingCodePart(arg);
                         }
+                        if (arg_func_def.modifiers.includes("table_name")) {
+                            const data_type = "Table" + util.toTitleCase(arg.value);
+                            if (return_data_type === "Table") {
+                                return_data_type = data_type;
+                            } else {
+                                object_data_type = data_type;
+                            }
+
+                            code_part.arguments.forEach((arg2: any, index: number) => {
+                                if (!arg2 || arg2 === arg) {
+                                    return;
+                                }
+                                const arg2_func_def = function_def ? function_def.args[index] : null;
+                                if (arg2_func_def && arg2_func_def.modifiers) {
+                                    if (arg2_func_def.modifiers.includes("table_props")) {
+                                        assignDataType(arg2, data_type);
+                                        addInterestingCodePart(arg2);
+                                    }
+                                }
+                            });
+
+                            arg.possible_props = ext.php_table_names_as_prop;
+                            addInterestingCodePart(arg);
+                        }
                         if (arg_func_def.modifiers.includes("entity_prop_name")) {
                             if (object_data_type) {
                                 const type_def = ext.php_type_defs[object_data_type];
