@@ -860,8 +860,8 @@ function crawlCodePart(code_part: any) {
 
                         if (arg_func_def.modifiers.includes("entity_name")) {
                             const data_type = "Entity" + util.toTitleCase(arg.value);
-                            if (return_data_type === "Entity") {
-                                return_data_type = data_type;
+                            if (return_data_type.includes("Entity")) {
+                                return_data_type = return_data_type.replace("Entity", data_type);
                             } else {
                                 object_data_type = data_type;
                             }

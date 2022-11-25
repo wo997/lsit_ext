@@ -2,7 +2,7 @@
     "name": "lsit",
     "displayName": "Piep Intellisense",
     "description": "framework",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "publisher": "lsit",
     "repository": {
         "url": "https://github.com/wo997/lsit_ext"
