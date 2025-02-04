@@ -26,7 +26,7 @@ export let php_scopes: php.FileScopes = {
     },
     classes: new Map()
 };
-export let visibleRanges: vscode.Range[] | undefined = undefined;
+export let visibleRanges: readonly vscode.Range[] | undefined = undefined;
 export let textChangeEventTimeout: any = null;
 
 let IS_JS = false;
@@ -309,7 +309,7 @@ function watchFiles() {
 
 function initSyntaxDecorator() {
     vscode.workspace.onDidChangeTextDocument(event => {
-        console.log(`Did change: ${event.document.uri}`, event);
+        // console.log(`Did change: ${event.document.uri}`, event);
 
         decorateActiveEditor(event.document.uri);
 
@@ -325,14 +325,14 @@ function initSyntaxDecorator() {
     });
 
     vscode.window.onDidChangeActiveTextEditor(event => {
-        console.log("Did change editor", event);
+        // console.log("Did change editor", event);
 
         if (event && event.document) {
             decorateActiveEditor(event.document.uri);
         }
     })
     vscode.workspace.onDidOpenTextDocument(document => {
-        console.log(`Did open: ${document.uri}`);
+        // console.log(`Did open: ${document.uri}`);
 
         decorateActiveEditor(document.uri);
     });

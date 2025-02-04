@@ -687,6 +687,8 @@ function crawlCodePart(code_part: any) {
         crawlCodePartComments(comments);
     }
 
+    // log("kind", code_part.kind, code_part.);
+
     switch (code_part.kind) {
         case "program":
             {
@@ -756,8 +758,11 @@ function crawlCodePart(code_part: any) {
                 let object_methods = null;
 
                 if (what.kind === "staticlookup" || what.kind === "propertylookup") {
+                    // log(what.kind, what?.what?.name, what?.what?.data_type, what?.what?.base_type);
                     if (what.kind === "staticlookup") {
-                        object_data_type = what?.what?.name;
+                        const classname = code_part.scope.class;
+                        // object_data_type = what?.what?.name;
+                        object_data_type = classname;
                         object_base_type = object_data_type;
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
                         if (class_data) {
@@ -942,7 +947,7 @@ function crawlCodePart(code_part: any) {
                         }
                         if (arg_func_def.modifiers.includes("register_table_name")) {
                             arg.scope.register_table_name = arg.value;
-                            log("TABLE", arg.value);
+                            // log("TABLE", arg.value);
                         }
                     }
 
@@ -1010,7 +1015,7 @@ function crawlCodePart(code_part: any) {
 
                             arg.items?.forEach((item: any) => {
                                 const name = item.value.items.find((e: any) => e.key?.value === "name")?.value?.value;
-                                console.log("PP", name);
+                                // console.log("PP", name);
                                 if (!name) {
                                     return
                                 }
@@ -1533,7 +1538,7 @@ function crawlCodePart(code_part: any) {
 
                     const classname = code_part.scope.class;
                     const var_name = offset.name;
-                    // log([classname, var_name, what.kind]);
+                    // log([what.kind, classname, var_name, code_part]);
                     if (what.kind === "selfreference" && classname && var_name) {
                         addInterestingCodePart(offset);
 
