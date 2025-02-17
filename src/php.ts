@@ -506,12 +506,14 @@ function beforeFunction(code_part: any): Function | undefined {
                         if (arg.name && "$" + arg.name.name === var_name) {
                             assignDataType(arg, data_type);
                             assignModifiers(arg, modifiers);
+                            // log("mamax", modifiers);
                         }
                     })
 
                 }
 
                 const match_return_line = line.match(/@return +[^\s]*.+/);
+                // log("match_return_line", match_return_line);
                 if (match_return_line) {
                     const [param_ann, data_type] = match_return_line[0].replace(/ +/, " ").split(" ");
 
@@ -533,6 +535,8 @@ function beforeFunction(code_part: any): Function | undefined {
                             }
                         }
                     }
+
+                    // log("mama", modifiers);
 
                     return_data_type = data_type;
                     return_modifiers = modifiers;
@@ -762,8 +766,14 @@ function crawlCodePart(code_part: any) {
                     if (what.kind === "staticlookup") {
                         const classname = code_part.scope.class;
                         // object_data_type = what?.what?.name;
-                        object_data_type = classname;
+                        // object_data_type = classname;
+
+                        // I don't know why this works, but i tested it and it's good. 
+                        // - self::scanDirectories
+                        // - EntityManager::oneToOne
+                        object_data_type = what?.what?.name || classname;
                         object_base_type = object_data_type;
+
                         const class_data: ClassScope = ext.php_scopes.classes[object_base_type];
                         if (class_data) {
                             object_methods = class_data.static_functions;
@@ -942,15 +952,20 @@ function crawlCodePart(code_part: any) {
                                 }
                             }
                         }
+
+                        // log(arg_func_def.modifiers);
                         if (arg_func_def.modifiers.includes("register_entity_name")) {
                             arg.scope.register_entity_name = arg.value;
+                            // log("maaaan", arg);
                         }
+
                         if (arg_func_def.modifiers.includes("register_table_name")) {
                             arg.scope.register_table_name = arg.value;
                             // log("TABLE", arg.value);
                         }
                     }
 
+                    // log("aha", arg.data_type);
                     if (arg.data_type === "RegisterEntityData") {
                         const crawlArray = (sub_arr: any) => {
                             if (sub_arr.kind !== "array") {
@@ -984,6 +999,7 @@ function crawlCodePart(code_part: any) {
                             return sub_data;
                         }
 
+                        // log("bitch", arg.scope)
                         if (arg.scope.register_entity_name) {
                             const data = crawlArray(arg);
                             const data_type = "Entity" + util.toTitleCase(arg.scope.register_entity_name);
