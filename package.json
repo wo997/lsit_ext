@@ -1,8 +1,8 @@
 {
     "name": "lsit",
-    "displayName": "Piep Intellisense",
+    "displayName": "EffectShops Intellisense",
     "description": "framework",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "publisher": "lsit",
     "repository": {
         "url": "https://github.com/wo997/lsit_ext"

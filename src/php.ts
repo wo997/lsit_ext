@@ -921,6 +921,12 @@ function crawlCodePart(code_part: any) {
                                         assignDataType(arg2, data_type);
                                         addInterestingCodePart(arg2);
                                     }
+
+                                    if (arg2_func_def.modifiers.includes("table_prop_names")) {
+                                        arg2.just_names = true;
+                                        assignDataType(arg2, data_type);
+                                        addInterestingCodePart(arg2);
+                                    }
                                 }
                             });
 
@@ -1038,7 +1044,12 @@ function crawlCodePart(code_part: any) {
 
                                 // console.log("CIPA", name_item.key?.value);
                                 const prop_detail: any = {};
-                                item.value.items.map((e: any) => { prop_detail[e.key.value] = e.value.value });
+                                item.value.items.forEach(({ key, value }: any) => {
+                                    if (!(key && value)) {
+                                        return;
+                                    }
+                                    prop_detail[key.value] = value.value;
+                                });
                                 prop_detail.optional = true;
                                 props[name] = prop_detail;
                                 // console.log("HHH", prop_detail)
@@ -1171,7 +1182,7 @@ function crawlCodePart(code_part: any) {
                                 });
                             }
                         }
-                        if (!item.key) {
+                        if (!item.key && !code_part.just_names) {
                             temp_errors.push({
                                 message: `Expected a key-value pair`,
                                 severity: vscode.DiagnosticSeverity.Error,
